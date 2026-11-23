@@ -1,0 +1,731 @@
+Dawnpatch: Technical Plan
+Nov 21, 2026 · @Gyaat
+Summary
+Dawnpatch is an open-source, local-first tool that trains a developer's own open-weights coding model every night from their coding-agent history, on whatever machine they have (CPU only, a 6 GB laptop, a 24–80 GB GPU, a multi-GPU box or a DGX Spark), so it gets measurably better at their kind of coding. Dawnpatch is a working name.
+It reads T3 Code, Claude Code and Codex history across all of the developer's projects, and is configured entirely through a small desktop app (Rust/Tauri) that shows what is being trained, live. While the machine is idle it turns the developer's sessions into episodes (the repo at a checkpoint, the prompt, the diff that was kept), trains a candidate model, tests it on recent work it never saw, and only replaces the current model if the candidate wins.
+Goals
+• Skill: the local model solves more of the developer's real tasks on the first try, in their repos, with their tests passing.
+• Taste: it repeats fewer of the corrections the developer has already given.
+• Trust: every promotion is backed by a held-out result, every version can be undone, and no chat replies, thinking or subagent calls are ever used.
+Success criteria for v1
+• On one developer's held-out T3 tasks, the trained model beats the base model plus the same memory (rules and retrieved past kept diffs in its prompt) on first-try pass rate, with a 95% confidence interval above zero.
+• It loses no more than 1 point on a fixed general coding benchmark.
+• The data audit shows zero chat, thinking or subagent text in any training set.
+How to read this plan. The goals, data rules and evaluation gate are fixed. Everything else (models, methods, thresholds, tools, module boundaries) is a starting point. If the team tests something and it scores better on the evaluation harness, use it and update this plan.
+Who it is for. Anyone can run it. Machines with large GPUs (24–128 GB, DGX Spark, multi-GPU) get the most from training; small GPUs and CPU-only machines run the same nightly loop with a smaller model, and for them most of the gain comes from memory. The 6 GB pilot laptop is a supported tier for small models.
+Memory first, weights on top. Every tier gets memory (rules from corrections, turned into checks where possible, plus retrieval of similar past kept diffs). Training is the second layer and is only served when it beats the base model plus the same memory.
+Principles and data rules
+Dawnpatch learns from the developer's prompts, corrections, repos, tests and kept diffs, and never from the agents' chat replies, thinking or subagent calls.
+Data
+Examples
+Allowed use
+Training target
+Developer's words
+Prompts, corrections, stated rules
+Task inputs, rules, judge rubric, preference labels
+No (input only)
+Repo and environment
+Files at a checkpoint, git history, test and build exit codes
+Context, grading, task generation
+Code only (fill-in-the-middle)
+Kept diffs
+Diffs that survive to a later checkpoint or commit, from the developer or an agent
+Warm-start targets, hints, grading reference, preference pairs
+Yes
+Corrected diffs
+Diffs the developer later reverted or asked to change
+The rejected side of preference pairs
+Rejected side only
+The small model's own attempts
+Its patches and tool calls in the sandbox
+Learning
+Yes
+Agent chat replies
+Claude or Codex messages to the developer
+None, dropped at import
+Never
+Agent thinking
+Reasoning items, thinking blocks
+None, dropped at import
+Never
+Subagent calls
+Subagent turns and their child threads
+None, dropped at import
+Never
+Rules that do not change without a plan update
+1.  Excluded data is dropped in the connector, before anything is written to disk. It is never stored, so it can never leak into training.
+2.  Every record carries provenance at hunk or span level: author (developer, agent, own_attempt, repo, unknown), retention evidence (committed, survived_tests, next_checkpoint, rejected) and the objectives it may be used for (sft_target, preference_chosen, preference_rejected, fim, distill_context, input_only). The trainer refuses any example whose use is not in that list. A rejected or corrected hunk may only appear as the rejected side of a preference pair; unknown authorship counts as agent-authored.
+3.  A role label is not proof of authorship. A message counts as typed by the developer only with source-specific evidence (T3 user_message item on a top-level thread with no parent thread or handoff origin; Claude Code user record that is not a tool result, not a sidechain and not injected by a hook or command; Codex event_msg UserMessage on a root session). Anything ambiguous (forwarded or delegated agent messages, handoffs, child threads, text pasted from an agent) is dropped in the connector before it is stored.
+4.  Training on agent-written kept diffs is on by default (owner decision, 2026-11-21) and can be switched off in the app's Data screen, which states that each user is responsible for having permission from their providers. The developer's own diffs are always allowed.
+5.  Everything runs on the developer's machine. No telemetry, no cloud, unless the developer chooses a remote GPU.
+6.  A new model is used only if it passes the promotion gate. The previous version is always one command away.
+Agent-written kept diffs being on by default does not change rule 2: if the developer switches them off, every hunk whose author is agent or unknown is excluded from all training objectives, including replay, preference pairs and teacher context for self-distillation (distill_context).
+The current permission basis: the project owner was told by their providers that using diffs is fine as long as direct chat, thinking and subagent calls are not shared. Each user of the open-source tool needs their own confirmation. This is not legal advice.
+Data sources and connectors
+All three sources ship in v1 and all of the developer's projects are enabled by default (each can be switched off in the app). T3 Code is built first because it stores diffs, commands and a git checkpoint per turn for Claude, Codex and opencode runs in one database; Claude Code and Codex use the same episode format and lower-confidence start states. Formats below were checked on a real Windows install on 2026-11-21; all three are internal and change between versions, so every connector must detect its schema version and fail loudly on an unknown one.
+App
+Location
+Keep
+Drop
+Version
+T3 Code
+~/.t3/userdata/statev2.sqlite (SQLite, WAL; open read-only)
+orchestration_v2_projection_messages where role = user; turn_items of type user_message, file_change (fileName, diffStr), command_execution (input, exitCode; output only for test commands), checkpoint, error; orchestration_v2_projection_checkpoints (ref, files, parentCheckpointId); projection_projects.workspace_root; orchestration_v2_projection_runs.provider
+assistant_message, reasoning, subagent, dynamic_tool arguments, handoff, compaction text
+v1
+Claude Code
+~/.claude/projects/<path-slug>/<session>.jsonl
+user records with text; toolUseResult.structuredPatch and originalFile for Edit/Write; Bash exit status for test commands; cwd, gitBranch, timestamps
+assistant text and thinking blocks, records with isSidechain (subagents), Agent tool calls
+v1
+Codex
+$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl and rollout-*.jsonl.zst (default CODEX_HOME is ~/.codex; detect compression from the stream's magic bytes, not the extension; read incrementally only up to the last complete record; an active plain file and its later compressed copy are the same session)
+event_msg UserMessage; apply_patch inputs and file-change results; command exit codes; turn_context.cwd; task_complete / turn_aborted
+response_item messages from the assistant, reasoning (encrypted anyway), subagent turns
+v1
+Repo state per source
+• T3 Code: checkpoints are git refs inside each project repo (refs/t3/orchestration-v2/checkpoints/.../ordinal/N). Restore with git worktree add --detach <tmp> <ref>. A read-only sample found about 91% of checkpoint refs still resolve; the rest are skipped.
+• Claude Code: no checkpoints. Rebuild from the last commit before the session, overlay originalFile for touched files, verify by hash. Mark as lower confidence.
+• Codex: no checkpoints. Use git by timestamp and keep the episode only if the first recorded patch applies cleanly.
+• Evidence level is recorded on every start state: exact_tree (a recorded tree id or full manifest, e.g. a T3 checkpoint ref), touched_files_verified (touched files match by hash, the rest of the tree is assumed) or patch_applies (only the first patch applied). A patch that applies cleanly can apply to several commits, and untouched uncommitted files are unknown, so only exact_tree episodes may become held-out promotion tasks; the others are training-only with lower weight. All task counts (including the 50-task minimum) are measured after this filter and after verifier qualification.
+Deduplication. T3 already contains Claude and Codex runs. When the Claude Code or Codex connector reads a session that T3 also recorded, keep the T3 version (it has checkpoints) and drop the duplicate by provider session id.
+Scale seen in one developer's history (pilot): 1,106 T3 threads across 12–17 projects, 3,282 user messages, 4,716 file-change items, 2,172 checkpoints, 445 threads with checkpoints, 351 of them running tests or a typecheck. Enough to train adapters; not enough for a full retrain, and few projects means overfitting is the main risk.
+Episode data model
+Every connector emits the same record, an episode: one task the developer asked for, the repo state when they asked, and what happened. Everything downstream reads episodes only, so adding a connector never touches training or evaluation.
+{
+  "episode_id": "t3:thread-865581af:turn-1",
+  "source": "t3",
+  "provider": "claudeAgent | codex | opencode | human",
+  "project": {"id": "...", "repo_root": "...", "languages": ["ts"]},
+  "created_at": "2026-10-07T16:27:03Z",
+  "split": "train | tune | promotion",
+  "start_state": {"kind": "t3_checkpoint | git_commit | reconstructed", "ref": "refs/t3/...", "evidence": "exact_tree | touched_files_verified | patch_applies"},
+  "prompt": {"text": "...", "tag": "user", "self_contained": true},
+  "turns": [
+    {"kind": "correction", "text": "keep it surgical", "tag": "user", "at_state": "refs/t3/..."},
+    {"kind": "diff", "files": ["src/x.ts"], "hunks": [{"patch": "@@ ...", "author": "developer | agent | unknown", "retention": "committed | survived_tests | next_checkpoint | rejected", "uses": ["sft_target"]}]},
+    {"kind": "command", "cmd": "npm test", "exit_code": 0, "is_test": true, "tag": "env"}
+  ],
+  "end_state": {"ref": "...", "kept_diff": "@@ ..."},
+  "verifier": {"commands": ["npm run typecheck", "npx vitest run src/x.test.ts"], "source": "package.json", "qualified": true, "frozen_tests": ["src/x.test.ts > parses empty input"]},
+  "labels": {"accepted": true, "evidence": ["committed", "tests_pass"], "weight": 1.0},
+  "rules": ["Prefer the smallest change that fixes it"]
+}
+Provenance tags (every text field has exactly one)
+Tag
+Meaning
+Can be a training target
+user
+Typed by the developer
+No
+env
+Produced by the machine (exit codes, test results, file contents)
+No
+repo_code
+Code in the repo at a checkpoint
+Yes, for fill-in-the-middle
+user_diff
+A diff the developer made themselves
+Yes
+agent_diff
+A diff an agent made (or of unknown author)
+Yes when kept, unless the developer switched agent diffs off
+own_attempt
+Produced by the Dawnpatch model in the practice gym, or in real sessions served by the Dawnpatch endpoint: patches and tool calls only, recorded by the endpoint's minimal logger from E5 onward and keyed to the client's session id, so the same session imported later through the T3 connector is deduplicated rather than dropped or double-counted. The developer's reactions are labels
+Yes
+When is a diff "kept"? In order of evidence strength: it is in a commit that reached the main branch or a merged PR (strongest); it survives unchanged to the thread's last checkpoint and tests pass there; it survives to the next checkpoint with no correction in between (weakest). A diff that a later turn reverted or that the developer corrected is labelled rejected. Weights per evidence level are a tunable starting point (1.0 / 0.7 / 0.4).
+Storage. One SQLite file per user (episodes.db) plus content-addressed blobs for patches. Episodes are append-only and keep their source ids so any trained behaviour can be traced back to the examples that taught it.
+Architecture
+All sources feed one episode store; memory, datasets and the practice gym read from it, and a single promotion gate decides what gets served.
+Connectors drop excluded data before anything is stored, and the gate compares every candidate against the base model plus the same memory.
+Module
+Responsibility
+Epic
+connectors/
+Read T3 Code, Claude Code, Codex (and later opencode) read-only; emit episodes
+E1, E9
+episodes/
+Episode schema, provenance tags, SQLite store, splits
+E1
+scrub/
+Secret scanning, self-containment check, data audit, overlap check
+E1
+memory/
+Rule extraction, approval, rule checks, retrieval index of past kept diffs, prompt injection at serve time
+E3
+datasets/
+fim, prompt2diff, correction, pairs; retrieval of context files
+E4, E7
+taskforge/
+Task selection, checkpoint restore, verifier discovery, synthetic tasks
+E2, E8
+sandbox/
+Docker/Podman backends, network policy, limits, image cache
+E2
+harness/
+Small agent loop with opencode-compatible tools
+E2
+grader/
+Verifier runs, anti-gaming checks, rule judge
+E2, E8
+trainer/
+Backends (Unsloth/TRL/PEFT, mlx-lm), methods, calibration, replay buffer
+E4, E7, E8
+gate/
+Contestants, metrics, bootstrap, promotion rule
+E2, E5
+registry/, export/
+Versions, undo, publishing to model servers, stable endpoint
+E5
+scheduler/
+Idle/power/thermal checks, memory guard, launch at login, resume
+E6
+app/ (Rust, Tauri)
+Desktop app: settings store, scheduler loop, trainer process control, events to the UI, tray
+E12
+app/ui/
+The app's screens (Svelte, uPlot); spec in ui/DESIGN.md
+E12
+report/, cli/
+Morning report, headless CLI over the same settings store
+E3, E6
+Runtime split. Rust owns everything that runs all the time, in one core crate shared by the desktop app and the CLI: settings, scheduling, idle/power/GPU checks, model downloads, version registry and the stable endpoint. Python (the trainer, plus dataset and eval workers) runs only as a child process the app starts, controls and stops; it reads its run config from the app and reports progress as JSON lines. Connectors and the episode store can live in either; pick whichever is simpler once E1 starts, as long as the episode format stays the same.
+Module boundaries are a starting point; merge or split them if it makes the code simpler.
+Learning signals and dataset construction
+The richest signal is the correction moment: the code just before the developer said "no, do X", their exact words, and the diff they kept afterwards. Five datasets are built from episodes each night.
+Dataset
+Input
+Target / label
+Built from
+Used by
+fim
+Repo file with a span masked
+The masked span
+repo_code at recent checkpoints and commits
+Stage 1
+prompt2diff
+Prompt + relevant files at the start state
+The kept diff
+Accepted episodes
+Stage 2
+correction
+State just before the correction + the correction text
+The diff kept after it
+Episodes with a correction turn
+Stage 2, weighted higher
+pairs
+Same input as above
+Chosen: kept diff. Rejected: corrected diff
+Episodes with a rejected diff
+Stage 3 (self-distillation, DPO on explicit pairs)
+gym
+Start state + prompt, run in a sandbox
+Pass/fail from the verifier
+Episodes with a verifier, plus synthetic tasks
+Stage 4 (RL) and evaluation
+rules
+Developer messages
+Short scoped rules
+Messages that state a rule
+Memory layer, not weights
+Construction steps
+1.  Select. Keep episodes with a restorable start state and a self-contained prompt. A prompt that only makes sense with the agent's reply ("do option 2") is dropped or, if the reference is to the developer's own earlier text, rewritten by the local model to stand alone.
+2.  Keep the correction in its moment. Never merge a later correction into the original prompt; that hands the model hindsight it would not have had.
+3.  Retrieve context from the prompt and the start-state tree only: files named in the prompt, the repo's import graph from those files, and a lexical search on the prompt, up to the context budget. Never use the kept diff, its touched files or anything after the start state to choose context, because at serving time those are unknown and on a held-out task they would point every contestant at the answer. The same retrieval is used at training, evaluation and serving time. E2 includes a test: deleting an episode's kept diff and end state leaves its evaluation input byte-for-byte identical.
+4.  Find and qualify a verifier. Take test, typecheck and lint commands from package.json, Makefile, pyproject.toml or CI config. A task is eligible for scoring only if a trusted grader, run several times in a fresh sandbox, fails at the start state and passes at the kept end state with the same command and the same set of test identities each time (flaky tasks are excluded). The command, the test files, the config that selects tests (e.g. vitest/jest/pytest config, package.json scripts) and the expected test identities are frozen per task. Ineligible tasks are kept for training and reported separately, never scored.
+5.  Generate synthetic tasks (required; the main training signal for skill): break-and-fix mutations of code with tests (flip a condition, delete a line, rename a call), and commit replays (reset to a commit's parent, its message is the prompt, its tests are the verifier).
+6.  Dedupe. Near-duplicate prompts and retries of the same task stay together and in the same split.
+7.  Scrub. Secrets scanner on every field; any hit drops the record. Only counts of hits (per rule, per project) are kept, never the matched value or its prefix.
+8.  Audit. Assert that no field tagged as chat, thinking or subagent exists anywhere, and run an n-gram overlap check of every stored text field (prompts, corrections, rules, tool and command output, training targets) against the raw agent-message text the connector saw in that session, held in memory only during import. Any hit drops the record at import and fails the night if found later. The importer's tests include a forwarded agent message in a user-role envelope and a human prompt that quotes an assistant reply.
+Splits. Episodes are assigned to dated cohorts per project before any dataset, rule or synthetic task is derived from them, and the assignment is permanent. Three splits: train; tune (used to pick methods, mixes and hyperparameters, and for experiments); promotion (used only by the promotion gate, never for tuning). Starting point: the newest 20% of threads per project are promotion, the 10% before them tune. Retries and duplicates follow their thread.
+Lineage. Every dataset row, rule, synthetic task and replay example records the episodes and repo snapshots it came from. A held-out solution must not reach training by another route, so the following are excluded from training whenever they contain or descend from a tune or promotion episode: FIM spans from commits or checkpoints that include a held-out kept diff, commit replays of those commits, rules extracted from held-out corrections (they may still be used in the prompt for all contestants equally, but are frozen per comparison), and the weekly rebuild (it uses the train split only, never the whole store). E2 tests this with one fix that appears both in a held-out T3 thread and in a later commit. The memory retrieval index follows the same rule: for any task it may return only kept diffs from the train split whose episode ended before that task's start state, never the task's own thread, its descendants or later commits with the same fix. E2's leak test covers memory: deleting a held-out episode's kept diff and end state leaves the memory a contestant sees byte-for-byte identical.
+Training stages and supported methods
+Training runs every night, in stages that build on each other. Each stage is enabled only when it beats the previous one on the evaluation harness, and which stages run depends on the hardware tier (see Hardware tiers). Pilot lesson (2026-11-23): training a 2B model on one-shot prompt-to-diff examples taught the format, not the fix; with one developer's history alone (hundreds of usable edits) the training set is too small, so synthetic practice tasks from the developer's own repos are required, not optional.
+1.  Stage 1, fill-in-the-middle on the developer's repos. Off by default in v1 (the product is an agent, not completion); switched on only if it wins on the harness. When on: learns their style, APIs and naming; starting point 10–20% of the training mix.
+2.  Stage 2, supervised warm start on verified kept edits, in the serving format. Input: the request plus context retrieved from the start state (for large files, line-numbered windows around the relevant spans, never the whole repo). Target: the kept change as the harness's edit tool call in unified-diff form (in the pilot, unified diff beat SEARCH/REPLACE on a 2B model, which copied huge SEARCH blocks and ran out of tokens). Targets are rebuilt from git between checkpoints and verified by applying them, one per file per turn, never concatenated across turns, and dropped rather than truncated when too long. Correction examples weighted about 2x. Loss only on the target tokens.
+3.  Stage 3, taste from corrections. First choice: on-policy self-distillation, where the teacher is the same model with the developer's correction or the kept diff in its context and the student sees the task without it (kept diffs written by Claude or Codex may appear in the teacher's context as demonstrations; their chat replies and reasoning never do). DPO (or ORPO/KTO) only on explicit pairs: a rejected or corrected diff against the kept one under the same request, plus the model's own passing vs failing gym attempts.
+4.  Stage 4, practice in the gym, the main source of skill. Tasks: synthetic break-and-fix tasks from training-only snapshots of the developer's repos (keep only reproducible failing-to-passing tests), commit replays, and replayed real tasks from the train split. The model attempts each task K times (start with K = 4–8) in the real harness. Rejection-sampling fine-tuning on its own passing attempts comes first. GRPO with the verifier as reward runs only on the 80 GB+ / DGX Spark tier, and only for task families with mixed outcomes (0 < passes < K). When every attempt fails, give a hint from the kept diff (which files or function), retry, and train on its own success without the hint. Budget each night by completed, graded attempts, not by training steps.
+Methods the trainer must support (pluggable; the user picks, and Auto suggests from the detected GPU)
+Kind
+Options
+Default use
+Adapters
+LoRA, QLoRA, DoRA (all linear layers)
+Default for nightly runs: fast, small, easy undo, less forgetting
+Full fine-tune
+Full weights, optionally with frozen embeddings
+Full fine-tuning with Adam needs about 16 bytes per parameter (about 10 with 8-bit Adam): about 3B at 48 GB, 7–8B at 80–128 GB. Larger models use LoRA or QLoRA
+Objectives
+SFT, FIM, DPO / ORPO / KTO, rejection-sampling FT, GRPO, on-policy self-distillation
+By stage, as above
+Backends
+Unsloth / TRL / PEFT on CUDA and ROCm (native Windows works). v1 supports Windows and Linux; macOS (mlx-lm) comes later
+Detected automatically. Checked 2026-11-21: GRPO's fast generation needs vLLM, which runs on Linux/WSL2 only, so GRPO (80 GB+ only) on Windows runs in WSL2 (decided), started by the app without user steps; rejection-sampling FT runs natively and uses transformers generation if vLLM is missing. DoRA falls back to plain PEFT (use_dora) if Unsloth's path fails. mlx-lm covers LoRA, DoRA and full fine-tune but not DPO or GRPO, so stages 3–4 on a Mac need another path or are off. Training needs a Hugging Face-format folder; .gguf files are serve-only
+Any model, no default (owner decision, 2026-11-21)
+There is no default base model. The developer always picks one: any repo from Hugging Face or any model already on disk. Dawnpatch never refuses a model because of its architecture; it finds a way to train it, and only says "not trainable" after every fallback below has failed, with the reason.
+Quantization is the developer's choice too. When they pick a model, the app lists its quantized variants on Hugging Face (for example bnb 4-bit, GPTQ, AWQ, FP8 and GGUF repos that name it as their base) next to the original, and a separate training precision control: 4-bit (QLoRA), 8-bit, or 16-bit (bf16/fp16). Any combination can be chosen; the compatibility check below says what it costs in memory and whether it works.
+Compatibility check (runs when a model or quantization is picked, before any night uses it)
+1.  Inspect. Read config.json and the file list: model_type, architectures, auto_map (custom code), quantization_config, parameter count, vocabulary size, context length, chat template.
+2.  Pick a backend, fastest first. (a) Unsloth if it supports the architecture. (b) Otherwise plain transformers + TRL + PEFT, with bitsandbytes for 4- or 8-bit. (c) Otherwise the same with trust_remote_code for models that ship their own modelling code.
+3.  Custom code is tied to library versions (the Nanbeige spike trained on one transformers version and failed to generate on it), so each custom-code model gets its own pinned Python environment, created with uv and recorded with the version.
+4.  Custom code is code from the internet. Before using trust_remote_code the app shows the repo and files, asks once, and binds the consent to a digest of every executable file (including code referenced from other repos and code in local folders); any change asks again. Weights and code are downloaded and verified by a separate step with no code execution. Every process that loads custom code (dry run, training, evaluation, serving) runs isolated: a container (Docker in WSL2 on Windows, rootless Docker or Podman on Linux) with GPU access, read-only access to the approved model and the night's scrubbed inputs, one writable output folder, no network, no home folder, no credentials.
+5.  Find LoRA targets. Use the known module names for the architecture; for an unknown one, target every linear layer except the embeddings and the output head.
+6.  Dry run. Load the model, run two training steps at the chosen context on one real labelled example (checking that loss is masked to the target tokens and that the adapter changes the output on that example), save and reload the adapter, and do one tool-call round trip through the chat template and the intended serving path. Measure peak memory and pick the largest context that fits; reserved memory above the card's physical VRAM counts as not fitting, because the Windows driver silently spills into shared system memory and runs 30–100× slower instead of failing. Record the exact working combination (backend, precision, versions, context).
+7.  Fallbacks when a step fails, tried in order and reported: Unsloth → plain PEFT; 4-bit fails on custom layers → 8-bit → 16-bit LoRA with gradient checkpointing and optimizer offload to CPU RAM; out of memory → shorter context → smaller batch with more accumulation; no chat template → ChatML, with a warning. A fallback that changes what the developer picked (precision, context, template) is shown and needs one click to accept before it is used.
+8.  Already-quantized repos. GPTQ, AWQ and bnb 4-bit repos are trained with LoRA on top of the frozen quantized weights (PEFT supports these). FP8 is dequantized to bf16 if the GPU lacks FP8. A GGUF file cannot be trained: the app reads the base model named in its metadata and offers to download that original instead, or to dequantize the GGUF (lossy, with a warning).
+9.  Result. The Model screen shows a badge (Unsloth, Standard, Custom code, or Not trainable with the reason), the measured memory and context, and which serving targets will work.
+GPU ownership. On small GPUs serving, training and evaluation cannot share memory, so the app owns the GPU through one lease. The endpoint unloads idle weights after a few minutes; a night starts only after the server has unloaded; a foreground request during a night pauses the run (cooperative pause) and is served, and the run resumes when the machine is idle again; evaluation loads contestants one at a time. This cycle is part of the pilot-laptop acceptance test.
+Serving any model. If the trained model converts to GGUF it is exported to Ollama, LM Studio and llama.cpp. If llama.cpp does not support the architecture (new or custom models), the stable endpoint is served by the built-in Python server (transformers, OpenAI-compatible) or by vLLM where vLLM supports it, and only the export targets that work are offered. The gym (stage 4) falls back from vLLM to transformers generation the same way; it is slower but still trains.
+Starting hyperparameters (tune freely): LoRA rank 32–64, alpha 2x rank, learning rate 1e-4 to 2e-4 for SFT and 5e-6 for RL/DPO, 1–2 epochs over new data per night, effective batch 8–16, gradient clip 1.0.
+Long contexts. Agent trajectories can exceed 30k tokens. Keep the head and tail of long tool outputs (about 2k tokens), drop old observations, and train per segment. The context budget is set by calibration on the user's hardware.
+Anti-forgetting. Each night trains on new data plus a replay buffer of earlier accepted examples (starting point 30%), with a KL penalty to the base model in RL stages. Avoid public trajectory datasets for replay unless their provenance is clean.
+Continual schedule. Training runs every night on every training tier (CPU-only nights are memory-only unless training is switched on); how often a new version may go live is the user's choice (see Promotion cadence). Each night continues the current candidate adapter. A full rebuild from the pinned base model runs weekly, when the base model changes, or after Forget, using the train split only. Episodes are the asset; weights are a cache.
+Evaluation and promotion gate
+A candidate model replaces the current one only if it beats the base model plus the same memory on the developer's held-out tasks without getting worse at general coding. The evaluation harness is built before any training (epic E2), because without it no improvement claim can be trusted.
+Contestants (same start state, tools, retrieval, time and token budget)
+• Base model, no memory
+• Base model + memory: rules and retrieved past kept diffs in the prompt (the baseline to beat)
+• Current model + memory
+• Candidate model + memory
+Metrics
+Metric
+How it is measured
+Role
+Replay pass@1
+Restore start state, run the model once in the sandbox, run the verifier
+Primary
+Repeated-correction rate
+On held-out tasks that follow a known correction, does the output violate the rule? Judged by the local judge with the rule as rubric
+Primary
+Kept-diff similarity
+Files touched and behaviour vs the kept diff; never the only signal
+Secondary
+Blind preference
+The developer is shown two anonymous passing patches and picks one (optional, a few per week)
+Secondary, highest trust
+Tool-format errors
+Malformed or unknown tool calls per task
+Guardrail
+General coding
+Fixed slice of a public benchmark (for example HumanEval+ or a small SWE-style set)
+Guardrail
+Regressions
+Held-out tasks the current model passed that the candidate fails
+Guardrail
+Promotion rule (starting point, tune with evidence)
+1.  Against the baseline: candidate pass@1 minus base + memory pass@1 has its interval's lower bound above zero on the promotion split, at the per-attempt level set by the cadence, using a paired bootstrap clustered by thread and project (related tasks move together, so they are resampled together). See Sequential testing under open questions: checking more often requires a stricter level.
+2.  Against the incumbent: candidate pass@1 is at least the served version's (starting point: paired difference ≥ 0 and its lower bound above −2 points), and incumbent-pass/candidate-fail tasks are at most 2 or 3% of tasks, whichever is larger. On a tie the incumbent stays; a candidate identical to the incumbent is never reported as a promotion.
+3.  Repeated-correction rate does not rise. If there are fewer than 10 eligible correction cases in the promotion split, this check is reported as "not enough cases" and does not block.
+4.  General coding drops by no more than 1 point; tool-format errors do not rise.
+5.  The data audit and the canary check for the night are clean.
+6.  Minimum data: at least 50 eligible promotion tasks (exact_tree start state, qualified verifier); with fewer, report "waiting for more data" and do not promote.
+7.  Promotion cadence (user setting). Every night (default), weekly, monthly, or "when the candidate wins by X points": the lower bound of the per-attempt interval for candidate minus served version is at least X points of pass@1. Promotions under nightly need larger gains than under weekly or monthly, so the app suggests weekly while the promotion split is small. The cadence only decides when promotion is attempted; rules 1–6 always apply, and training and memory updates still run every night.
+Reports show paired win/loss counts next to every interval. Because the promotion split is only used for promotion and tuning happens on the tune split, the interval keeps its meaning across nights; the promotion split is refreshed with each new dated cohort, and the sequential testing rule (see Open questions, Sequential testing) is decided; E5 implements it.
+These rules are enforced in the registry operation that moves the served pointer, not in the UI. A skipped, timed-out, underpowered or partial evaluation leaves the candidate pending with the missing evidence listed; no setting in the app or CLI can promote without it.
+"No measurable change" and "inconclusive" are valid outcomes and are reported as such.
+Anti-gaming. Each candidate patch is applied to a fresh copy of the start state and graded there with the task's frozen command, frozen test files and frozen test-selection config; changes the patch makes to tests, test config or the command are discarded before grading. The expected test identities must all run and pass; deleted assertions, skipped or missing tests fail the attempt. The verifier runs outside the model's view; the judge never sees the agent's chat or the kept diff when scoring rules. The judge's model, rubric and the approved rules are frozen per comparison. A patch that leaves the start state unchanged, or changes only files unrelated to the task, is a fail (the pilot evaluator counted such no-ops as applied).
+Versioning and undo. Every candidate is stored with its base model, training config, dataset hash and example ids. The served model is a pointer; dawnpatch undo moves it back in one step. Keep at least the current and previous versions.
+Nightly runtime, hardware and serving
+The night runs only when the machine is idle, on power and the GPU is free, and it stops within seconds when the developer comes back, resuming from a checkpoint in the next idle window.
+Night order: import new sessions → scrub and audit → update memory (rules, checks, retrieval index) → build datasets and synthetic tasks → generate gym attempts → train → evaluate → promote or reject → write the morning report. Generating attempts usually costs more than training, so the scheduler budgets generation first.
+Scheduler. The desktop app's own scheduler loop; the app starts at login (Tauri autostart: Windows registry, macOS LaunchAgent, Linux .desktop) and sits in the tray. Headless installs can use the CLI under Task Scheduler, launchd or systemd instead. Idle detection from OS input-idle time plus "no agent traffic"; power and thermal checks; a memory guard that pauses or kills training under pressure. Configurable quiet hours.
+Sandbox. Docker in WSL2 on Windows, rootless Docker or Podman on Linux. Dependencies are prepared without exposing the project: (1) a fetch step with network but no project source and no credentials downloads exactly the artifacts pinned in the lockfile from the public registries and verifies their hashes; (2) an offline, unprivileged, disposable container with a filtered snapshot of the repo (no .env, keys, credential files or git remotes) installs and builds from those artifacts, so lifecycle scripts run with no network. Attempts then run with network off, a CPU/memory limit and a wall-clock timeout. Cached images hold dependencies only, never project source. Projects whose dependencies cannot be prepared this way (no lockfile, private registries, network at build time) are reported and skipped. .env files and credential stores are never mounted.
+Agent harness for the small model. A minimal loop with opencode-compatible tools: bash, read, write, grep, glob, plus apply_patch, which takes a unified diff and is the model's only edit tool (stage 2 trains on exactly this call; opencode's old-string/new-string edit is not offered, because that format looped in the pilot). The endpoint exposes the same tool to T3 Code and other agents. The model trains and serves with the same tool schema, so practice transfers to real use.
+Hardware tiers (suggestions only, calibrated on first run). Every tier is supported and runs the same nightly loop; the tier changes the model size and which stages run. The tier only drives the suggestions shown in the Model screen and the Auto method; nothing is pre-selected. The developer can override every one of them in the app: any model, any method, any context. When a choice is unlikely to fit the measured memory, the app shows a warning with the estimate and lets them run it anyway; a run that runs out of memory stops cleanly and says so in the report.
+GPU memory
+Model size
+Default methods
+Context
+No GPU (CPU only)
+0.5–1.5B
+Memory-only nights are the normal case; optional overnight LoRA on a model up to about 1.5B (slow, off by default); records and evaluates
+2–4k
+6–16 GB (supported; includes the 6 GB pilot laptop)
+1.5–4B (7B at short context)
+Memory; QLoRA; stage 2, rejection-sampling FT, self-distillation
+4–8k at 6–8 GB, up to 16k at 16 GB
+24–48 GB
+7B with LoRA or 14B with QLoRA at 24 GB (a 14B is 29.5 GB in bf16, so plain LoRA does not fit); 27–32B dense or 30B-class MoE in 4-bit at 48 GB
+Memory; stages 2–4 incl. self-distillation and DPO; no GRPO
+16–32k
+80 GB+, multi-GPU, DGX Spark (128 GB unified)
+27–32B dense or 30B-class MoE with LoRA/QLoRA (bf16 weights of a 30B are about 61 GB); full fine-tune only up to about 7–8B
+All stages incl. GRPO (mixed-outcome task families only) and self-distillation
+32–64k
+Remote GPU (opt-in)
+Any
+Same pipeline on a rented box
+Any
+Serving and export. Every version records the pinned base and variant repos, their licenses and required notices. Exports are labelled adapter-only or merged weights; merged exports carry the base model's license and notices, and a base whose license forbids redistribution of derivatives is exported as adapter-only. Publish each promoted version as a merged model or adapter: Ollama (Modelfile ADAPTER or GGUF), LM Studio (GGUF), llama.cpp (--lora), vLLM (--lora-modules), and mlx-lm on Mac. Expose one stable OpenAI-compatible endpoint whose model name never changes, so T3 Code and other agents can point at it once and always get the current version.
+Privacy and security
+Nothing leaves the developer's machine by default, and anything sensitive is removed before it is stored, because a secret that reaches training can be memorised into the weights.
+• Read-only sources. Connectors open app databases and logs read-only (mode=ro, no locks held) and never modify T3 Code, Claude Code or Codex files. Checkpoint restores happen in temporary worktrees, never in the developer's working copy.
+• Projects on by default, off with one switch. All detected projects are imported unless the developer switches one off in the app's Data screen. Switching a project off stops new imports; choosing Forget removes it as described below.
+• Secret scrubbing. gitleaks-style rules plus entropy checks on every field (prompts, diffs, command output, file contents). A hit drops the record, not just the string. .env, key files and credential stores are never read.
+• Memorisation check. Real secrets are never kept, so they cannot be probed. Instead Dawnpatch generates random canary strings, inserts them at known points in a small number of training rows (recorded in a separate local file), and after training checks locally whether the model completes any canary from its prefix; any exact completion fails the night. A pass shows that this run did not memorise inserted strings at that exposure; it does not prove that no real secret was learned, which is why scrubbing before storage is the main defence.
+• Sandbox isolation. No network during attempts, no host mounts beyond the temporary worktree, resource limits, timeouts.
+• Data at rest. The data folder is user-only (0700 on Unix, user ACL on Windows). Optional encryption with an OS keychain key.
+• Forget. Every derived artifact (patch blobs, dataset rows, rules, replay buffer entries, checkpoints, adapters, reports, sandbox images, caches) records which projects and episodes it depends on. Forget deletes the episodes and every artifact that depends on them, cancels queued and in-flight runs that used them, and schedules a rebuild from the pinned base (continuing the current adapter would carry the project along). Versions trained on the forgotten data are listed; the developer chooses to purge them or keep them, and kept ones are marked as containing forgotten data. Exports already copied to Ollama or LM Studio are listed as outside Dawnpatch's control.
+• No telemetry. No account, no analytics. Remote GPU training is explicit opt-in and shows exactly what is uploaded; it is not in v1 (decided 2026-11-21) and comes after M2.
+• Supply chain. Pin dependencies, verify downloaded tools (llama.cpp binaries, model weights) by checksum, and never execute code from the episode store outside the sandbox.
+Product and UX
+After installing the app and confirming one first-run screen the developer does nothing; each morning they glance at one screen and can undo with one click.
+Desktop app (v1, the easiest way to use it; optional, see Terminal use)
+A small, fast Tauri 2 app (Rust backend, Svelte UI, uPlot charts) that lives in the system tray. It replaces the config file: every setting is a control in the app, saved to an internal SQLite settings store; no file has to be edited (settings can optionally be exported and imported). It is built for power users: dense, keyboard-driven, every number shown with its source. Dark and light themes, following the OS by default. The full visual and behaviour spec is ui/DESIGN.md; the clickable reference is ui/mockup/index.html.
+Screen
+What the developer sees and controls
+Overview
+Served version, gain vs base + memory with CI, episodes, next run window; tonight's pipeline stepper; loss chart; last nights' outcomes; pause/resume
+Training
+Live train and eval loss, step/epoch/LR/tokens per second/ETA, data mix, GPU/VRAM/temperature, which episodes are in the current batch, log; pause, stop, run now
+Model
+Base model, always picked by the developer (no default): any Hugging Face repo (search, size, fits-your-GPU badge, compatibility badge, its quantized variants, download with progress and resume) or a local model folder; training precision (4-bit, 8-bit, 16-bit); method (auto, LoRA, QLoRA, DoRA, full); which stages run; all hyperparameters with reset to defaults. Changing the base model asks first because it triggers a full rebuild
+Data
+T3 Code, Claude Code and Codex switches; every project with episodes, corrections, replayable tasks and verifier, each with a switch (all on by default); what is used for training; a locked list of what is never used (agent chat replies, thinking, subagent calls, secrets)
+Schedule
+When a run may start (idle minutes, time window, on AC power, GPU free, no agent activity), when it must stop (developer returns, clock time, GPU temperature, RAM, max hours), when it tests (after each run, minimum held-out tasks, general benchmark, weekly rebuild, test time budget); a week grid of allowed and used hours. Promotion cadence: every night (default), weekly, monthly, or when the candidate wins by X points; config key promotion.cadence. (ui/DESIGN.md and the mockup still need this control.)
+Evaluation
+Pass@1 per version vs baseline, the contestants table, the promotion-gate checklist with its values
+Versions
+Stable endpoint URL and model name; version list with use, undo, export (Ollama, LM Studio, llama.cpp, vLLM, mlx-lm)
+Rules
+Learned rules with evidence and scope; approve, edit, remove
+Settings
+Hardware and recalibration, data folder, theme, launch at login, notifications, encryption, remote GPU, settings export/import, forget
+How the app runs the night
+• The app starts at login, hidden in the tray. Closing the window hides it; training continues.
+• Its scheduler loop checks the Schedule conditions every few seconds (idle time, AC power, GPU use via NVML, time window). When they hold it runs the night order below, one step at a time.
+• The trainer is a Python child process. The app sends commands on its stdin and reads JSON lines from its stdout (stage, step, loss, eval loss, learning rate, tokens per second, current episodes, log), stores them, and pushes them to the UI.
+• Every run has a durable id and a lease in the settings store, shared by the app and the CLI, so only one owner runs it and a crashed owner's run can be found and cleaned up.
+• Pause is cooperative: on "pause" the trainer stops at the next step boundary, saves a checkpoint atomically (write to a temp folder, then rename), reports "paused" and exits, which frees GPU memory. Steps are sized so this fits the 10-second target; if a checkpoint is still writing, the app waits for it rather than corrupting it. A trainer that does not stop within the grace period is killed with its whole process tree (Windows Job Object, Unix process group), and the run resumes from the last complete checkpoint.
+• Work inside WSL2 and Docker is supervised there too: each run's containers carry its run id label and are stopped by label; WSL-side workers are tracked by pid file inside WSL. On app start, anything labelled with a run that is no longer active is stopped. Unrelated WSL and Docker workloads are never touched. Tests cover user return, app crash and sleep/resume during training and during grading.
+• The Python environment is created on first run with a bundled uv from a pinned lockfile, matched to the detected GPU and driver; the installer itself stays small. Models that ship custom code get their own pinned environment.
+• Within a night the trainer process stays alive across stages (loading and quantizing took 2–3 minutes per start in the spike), and tokenized datasets are cached.
+• Model downloads never rely on Hugging Face cache symlinks (they fail on Windows without Developer Mode): files are downloaded as plain files, limited to weights, config, tokenizer and code.
+Terminal use (no app needed)
+The desktop app is optional. Anyone with the codebase can do everything from a terminal, without downloading or installing the app: clone the repo, build the CLI, and run it. The app and the CLI are two front ends over the same Rust core crate (settings store, scheduler, trainer control, registry, endpoint); the CLI binary does not depend on Tauri or a webview, so it also works on servers and over SSH.
+• From source: git clone, then cargo run -p dawnpatch-cli -- <command> (or cargo install --path crates/cli to get a dawnpatch binary). The CLI creates the Python trainer environment with uv on first use, exactly like the app.
+• Parity rule: every action and every setting in the app has a CLI equivalent, and the reverse. CI checks this against the settings list in ui/DESIGN.md.
+• Settings from the terminal: dawnpatch config list / get <key> / set <key> <value> (same keys as ui/DESIGN.md), plus optional config export/import to a file. No file has to be edited.
+• Watching from the terminal: dawnpatch watch streams the live run (stage, step, loss, eval loss, GPU, VRAM, temperature) as text, with --json for the raw JSON lines.
+• Scheduling without the app: dawnpatch daemon runs the same scheduler loop in the foreground; dawnpatch daemon install registers it as a user service (Task Scheduler on Windows, systemd user unit on Linux).
+• The app and the CLI can be used together on one machine: both read the same settings store and take the same run lease, so they never start two runs at once.
+Command
+What it does
+dawnpatch init
+Finds T3 Code, Claude Code and Codex data, the GPU and a model server; asks which base model to use (no default); calibrates; optionally installs the daemon
+dawnpatch
+One status block: current version, last night's result, what it is waiting for
+dawnpatch scan
+Read-only: counts episodes, corrections that recur, replayable tasks and verifiers per project (the first thing a new user runs)
+dawnpatch rules
+Lists learned rules; approve, edit or remove
+dawnpatch sleep
+Runs a night now (still yields to the developer)
+dawnpatch eval
+Runs the harness on the current or a chosen version
+dawnpatch report
+Shows the latest morning report
+dawnpatch undo
+Goes back one version
+dawnpatch pause / resume
+Stops and restarts learning
+dawnpatch forget
+Deletes recorded episodes
+dawnpatch export
+Publishes the current version to Ollama, LM Studio, llama.cpp or vLLM
+dawnpatch config list / get / set
+Reads and changes any setting (same keys as the app)
+dawnpatch model search / pull / check / use
+Searches Hugging Face, lists quantized variants, downloads with resume, runs the compatibility check, picks the base model and precision
+dawnpatch data
+Lists sources and projects with counts; enable or disable each
+dawnpatch watch
+Live view of the current run in the terminal (--json for raw progress lines)
+dawnpatch versions
+Lists versions with status; use a specific one
+dawnpatch serve
+Starts the stable OpenAI-compatible endpoint in the foreground
+dawnpatch daemon [install | uninstall]
+Runs the scheduler without the app, or installs it as a user service
+Morning report (also a local web page)
+• Outcome in one line: promoted, kept the previous version, or waiting for data, with the reason.
+• First-try pass rate and repeated-correction rate vs the baseline, with confidence intervals.
+• One task it now gets right and one it still gets wrong, each with the evidence.
+• New or changed rules in memory.
+• What the night cost: hours, GPU time, number of attempts.
+Integration. One stable local endpoint and model name. T3 Code, opencode or any OpenAI-compatible agent points at it once. Later: a T3 Code provider entry so the developer can route easy tasks to their local model.
+Open-source and business shape. The core (connectors, episode format, harness, trainer, gate) is open source. A later paid tier could offer team models trained on a company's repos, managed GPUs and compliance audit exports. The audit ("no chat, thinking or subagent text was trained on") is a selling point.
+Epics and milestones
+Thirteen epics in four milestones; the first milestone proves there is enough to learn from and builds the harness that every later claim depends on. Acceptance criteria are minimums: the team can raise them, split epics, or change how they are met.
+Milestones
+1.  M1 Proof (E0–E3): real T3 data becomes clean episodes, the harness scores a base model on replayed tasks, and scan shows whether corrections recur.
+2.  M2 First trained model, in the app (E4–E6, E8 synthetic tasks and rejection-sampling FT, E9, E12): episodes from all three sources; a nightly run started and shown by the desktop app builds memory, generates synthetic tasks, trains, evaluates against base + memory and can be undone. The full loop runs on every tier, including the 6 GB laptop. The quality claim (beats base + memory) is proven on a 24 GB+ machine (own or rented); an honest "no gain yet" result also completes M2.
+3.  M3 Taste and practice (E7–E8): self-distillation and DPO on corrections, and the full practice gym (GRPO on 80 GB+ machines).
+4.  M4 Live and release (E10–E11): live learning, open-source release.
+ID
+Epic
+Goal
+Key deliverables
+Acceptance criteria
+Depends on
+Milestone
+Status
+E0
+Foundations
+A project anyone can run on Windows and Linux (macOS later)
+Rust workspace (core crate, CLI crate, Tauri app crate; the CLI builds and runs from source without Tauri) and Python trainer package, settings store (SQLite, no config file), data folder per OS, logging, CI on Windows and Linux (macOS later), plugin interface for connectors and backends
+dawnpatch --version and tests pass on Windows and Linux in CI; cargo run -p dawnpatch-cli works from a fresh clone with no app installed
+—
+M1
+Not started
+E1
+T3 connector and episode store
+Turn T3 history into clean, tagged episodes
+Read-only reader for statev2.sqlite, schema-version detection, episode builder, kept/rejected labelling, provenance tags, secret scrubber, data audit, incremental import
+On a real T3 install: imports all enabled projects without writing to T3; audit finds zero chat, thinking or subagent text; forwarded-agent-message and quoted-reply fixtures are dropped; hunk-level provenance is correct on a mixed-author fixture; 3 manually checked episodes match the source
+E0
+M1
+Not started
+E2
+Evaluation harness
+Score any model on replayed tasks
+Checkpoint restore via worktrees, Docker sandbox with offline dependency preparation, opencode-style harness, verifier discovery and qualification, dated train/tune/promotion cohorts with lineage, metrics, clustered paired bootstrap, baseline report
+Restores at least 80% of checkpoints with a verifier; counts eligible tasks after the exact_tree and verifier-qualification filters; scores 2 base models on 50+ eligible promotion tasks; retrieval-leak, split-lineage and grader-tamper tests pass; rerun variance documented
+E1
+M1
+Not started
+E3
+Scan and rules memory
+Show what there is to learn; give value the same night
+dawnpatch scan, correction mining, recurrence count, rule extraction with the local model, rule approval CLI, rule checks (each approved rule becomes, where possible, a deterministic check such as a lint, grep or test command, otherwise a judge rubric; the harness runs the checks before the agent finishes and reports violations back to it once), retrieval index of past kept diffs (train split only, see Lineage), prompt injection at serve time, the repeated-correction scorer (frozen judge model and rubric) validated against blinded human labels
+scan runs in under 10 min on the pilot data; harness shows base + memory vs base on held-out tasks
+E1, E2
+M1
+Not started
+E4
+Trainer stages 1–2
+Train on repo code and kept diffs
+FIM and prompt2diff/correction datasets, retrieval, training backends (Unsloth/TRL/PEFT; mlx-lm later with macOS), compatibility check with backend fallbacks for any model (incl. custom code and pre-quantized repos), LoRA/QLoRA/DoRA/full FT, hardware calibration, replay buffer
+Engineering: on the 6 GB pilot laptop, one reproducible run goes import → datasets → train (the first-run model, Qwen3.5-2B via Unsloth) → evaluate → promote or reject, including a pause and resume, and records usable context, peak memory, throughput and end-to-end time. Result: candidate vs base + memory reported with its interval; a significant gain is the goal, and "inconclusive" is reported honestly rather than counted as a pass. Quality: on a 24 GB+ machine, the same pipeline reports candidate vs base + memory on the promotion split with its interval.
+E2
+M2
+Not started
+E5
+Gate, versions and serving
+Only better models are used, and any can be undone
+Promotion rule with the user's promotion cadence (nightly, weekly, monthly, or when the candidate wins by X points) and its sequential-testing level, version registry, undo, export to Ollama, LM Studio, llama.cpp, vLLM, stable endpoint, minimal served-session logger
+A rejected candidate never serves; undo restores the previous version in under 1 min; export works for at least 2 servers
+E4
+M2
+Not started
+E6
+Scheduler and morning report
+Runs by itself at night
+Idle/power/thermal detection, memory guard, yield-on-return with cooperative pause and resume, launch at login, night orchestrator, morning report
+Five unattended nights complete on a laptop; returning to the machine pauses work within 10 s; report shows outcome and evidence
+E5
+M2
+Not started
+E7
+Taste training
+Learn taste from corrections
+On-policy self-distillation with the correction or kept diff in the teacher's context (distill_context), pair builder for explicit pairs (kept vs corrected, own pass vs fail), DPO/ORPO/KTO support
+Repeated-correction rate falls vs the M2 model with no drop in pass@1
+E4, E5
+M3
+Not started
+E8
+Practice gym
+Learn by doing, on the developer's tasks
+Synthetic break-and-fix and commit-replay tasks and rejection-sampling FT (needed for M2), K-attempt rollouts, hints from kept diffs, GRPO on 80 GB+, anti-gaming checks
+On every training tier, rejection-sampling FT beats the stage-2-only model on held-out pass@1; on 80 GB+, at least 30% of gym tasks have 0 < passes < K and GRPO beats rejection-sampling FT
+E2, E4
+M3
+Not started
+E9
+Claude Code and Codex connectors
+Same episodes from the other apps
+JSONL and zstd readers (plain and compressed rollouts, partial files), repo-state reconstruction with recorded evidence level, dedupe with T3
+Episodes from both pass the audit; duplicates of T3 sessions are dropped; reconstructed start states verified by hash
+E1
+M2
+Not started
+E10
+Live learning and T3 integration
+Learn from using the local model itself
+Live learning from the sessions the E5 logger records, hindsight self-distillation, T3 provider entry
+A measured gain from live sessions on top of M3, through the same gate
+E5, E8
+M4
+Not started
+E11
+Release
+Others can install and trust it
+Project license chosen (core), license and notice manifest for bases and exports, fixtures with documented redistribution rights, docs, first-run flow, signed app installers (Windows NSIS, Linux AppImage; macOS dmg later) with auto-update, uv-created trainer environment, winget/Homebrew, example datasets with clean provenance, contribution guide, security policy
+A new user goes from install to first scan in under 15 minutes on Windows and Linux
+E6, E12
+M4
+Not started
+E12
+Desktop app
+Configure, watch and control everything from one light app; no config file
+Tauri 2 app (Rust): SQLite settings store, tray, launch at login, single instance, scheduler loop, trainer process control (stdin commands, JSON-line progress, cooperative pause, process-tree kill), NVML/idle/power readers, Hugging Face search and resumable download, event stream to the UI. UI: the nine screens in ui/DESIGN.md, dark and light themes, keyboard navigation, uPlot charts
+Every setting in ui/DESIGN.md is editable in the app and with dawnpatch config, and takes effect without editing a file; a CI parity test fails if an app action has no CLI command; a live run shows loss within 2 s of the trainer logging it; pause frees GPU memory within 10 s and the next window resumes from the checkpoint; idle app uses under 100 MB RAM and no measurable GPU; installer under 20 MB
+E0
+M2
+Not started
+Pilot results (2026-11-22/23, 6 GB laptop, MiniCPM5-2B, 4-bit QLoRA)
+• Run 1 (experiments/t3-minicpm5): input was the request plus a file name only, targets were raw provider diffs in mixed formats, 21% truncated. Held-out loss fell (1.91 to 1.47) while generations invented file contents and looped. Lesson: loss is never evidence; the model must see the code it edits; targets must be clean.
+• Run 2 (experiments/t3-minicpm5-v2): request plus the touched file from the T3 checkpoint, targets rebuilt from git and verified, non-self-contained prompts dropped. Only 144 training edits survived. On 12 held-out edits, the unified-diff adapter's edits applied 75% of the time vs 17% for the base; SEARCH/REPLACE looped; the unified-diff adapter still ran away on 33% of edits; no exact matches, several applied patches were no-ops, and the interval came from only 4 thread clusters. Lessons: unified diff is the better target at 2B; the evaluator must fail no-ops; one developer's history is too small to train skill on, so synthetic tasks are required; real held-out tasks need running tests, not similarity scores.
+• Reviews (Claude Opus 5.5, GPT-6.2 Astra, 2026-11-23) agreed: build the replay harness and memory first, design for big machines while keeping every tier supported, and keep training only where it beats base + memory by a predeclared margin (starting point: 5 points pass@1; a research kill criterion, not a gate rule) without a general-coding drop.
+Experiments and open questions
+The team owns these choices: run the experiment on the evaluation harness, keep whatever wins, and record the result here.
+How to change the plan
+1.  Write the hypothesis and the metric it should move.
+2.  Run it against the current default on the same held-out tasks, with the paired bootstrap.
+3.  If it wins without breaking a guardrail, make it the default and add a one-line entry to the decision log below.
+4.  Fixed points that need the project owner to sign off: the data rules, the held-out split and the promotion gate's guardrails.
+Open questions to answer early
+[ ] How often do corrections actually recur across threads? (scan, E3.) If rarely, weight skill over taste.
+[ ] Which base model family gives the best gain per GPU hour on TypeScript and Python? Verified ids (2026-11-21): Qwen/Qwen2.5-Coder-7B-Instruct, Qwen/Qwen2.5-Coder-14B-Instruct, deepseek-ai/deepseek-coder-6.7b-instruct, ibm-granite/granite-8b-code-instruct-4k; newer to test: Qwen/Qwen3-4B-Instruct-2507 (6–16 GB tier), Qwen/Qwen3-8B, Qwen/Qwen3-14B, Qwen/Qwen3.5-9B, Qwen/Qwen3-Coder-30B-A3B-Instruct (48 GB tier).
+[x] Where is M2 proven? Revised (2026-11-23): the engineering loop (import to promote, pause and resume) on the 6 GB pilot laptop; the quality claim on a 24 GB+ machine, own or rented, because the pilot showed a 2B model on 6 GB learns the format but not the fix.
+[x] Nanbeige spike done (2026-11-22, spikes/model-compat/RESULTS.md): the custom-code fallback path works (4-bit load, training, resume), but Nanbeige4.2-3B fills the 6 GB card at 1024 tokens and stalls at 2048, and its custom code fails at generation on the transformers version it trains with. Lessons now in the plan: treat reserved memory above physical VRAM as "does not fit" (Windows silently spills to shared memory); one pinned Python environment per custom-code model; no Hugging Face cache symlinks on Windows; keep the trainer alive across a night's stages.
+[ ] First-run model on the 6 GB pilot laptop: Qwen/Qwen3.5-2B (2026-02, Apache-2.0, 262k context, hybrid linear attention, already supported by Unsloth; Unsloth recommends 16-bit LoRA rather than 4-bit for Qwen3.5). First implementation task in E4: run the compatibility check on it in 16-bit and 4-bit and sweep context (2k → 64k) to find the usable training context. Fallback: unsloth/Qwen3-1.7B-unsloth-bnb-4bit. "Full context" applies to serving; training context is whatever the sweep shows fits.
+[ ] Spike: does the hf-hub crate (1.0) give progress callbacks and resume? If not, download with reqwest Range requests or with huggingface_hub through the trainer's Python.
+[ ] Spike: Unsloth + Triton on native Windows inside a uv-created venv (triton-windows, MSVC), and TRL resume_from_checkpoint mid-epoch with Unsloth.
+[ ] Idle detection on Linux Wayland (user-idle2 covers Windows, macOS, X11; Wayland needs the logind or GNOME IdleMonitor D-Bus fallback).
+[ ] Does FIM on repo code help on top of diff SFT, and at what mix? (Off by default in v1.)
+[x] Retrieval vs weights. Decided (2026-11-23): memory (rules plus retrieval of past kept diffs) is part of the baseline every candidate must beat.
+[ ] Best evidence weights for kept diffs (commit vs survived vs next checkpoint).
+[ ] Do hints from kept diffs speed up RL, or teach the model to depend on them?
+[ ] K for gym attempts vs night length on a 24 GB card.
+[ ] Is a small local judge reliable enough for the repeated-correction metric? Compare against the developer's blind picks (now part of E3).
+[x] Sequential testing. Decided (2026-11-23, starting point): promotion attempts share a 5% false-promotion budget per 30 days, split evenly across the attempts the chosen cadence allows (nightly: about 0.17% per attempt; weekly: about 1.2%; monthly: 5%), so the interval in promotion rule 1 uses that per-attempt level, not 95%. A cohort of promotion tasks that already decided a promotion is not reused for the next one. The "X points" cadence requires the lower bound of that per-attempt interval (candidate minus served version) to be at least X points, and is checked nightly. The 5-point margin in the first big-machine experiment is a research kill criterion, not a gate rule. E5 implements and tests this.
+[ ] What do T3 checkpoints contain exactly (for example, uncommitted changes and untracked files)?
+[x] Windows sandboxing. Decided: Docker in WSL2, network off during attempts.
+[ ] How far can one developer's data go before cross-user models (opt-in, for teams) become necessary?
+[ ] First big-machine experiment: about 50 real held-out tasks with running tests plus about 300 synthetic training tasks from 2–3 of the developer's repos. Arms: base, base + memory, base + memory + adapter (stage 2 and rejection-sampling FT, then self-distillation). Measure pass@1, base pass@8 (headroom), repeated-correction rate, turns and tokens per solved task, a public-benchmark slice for forgetting, and GPU-hours. Keep weights-as-core if the adapter beats base + memory by at least 5 points with the interval above zero and no more than a 1-point general drop.
+[ ] Which base on big machines? Candidates named by reviewers (unverified, check before use): Qwen3.6-27B or Qwen3.8-27B (dense), Qwen3-Coder-30B-A3B or Qwen3-Coder-Next (MoE, faster on DGX Spark), SERA-14B for 24 GB. Pick by local replay, not vendor scores.
+[ ] DGX Spark and single-GPU throughput: measure verified attempts per night (generation plus tests plus training), not training tokens per second.
+[ ] Owner decision: may the trainer learn from a bigger local model's verified attempts on synthetic tasks (not agent history)? Worth it only if that teacher passes at least 10 points more of the user's synthetic tasks than the student.
+Decision log
+Date
+Decision
+Evidence
+Owner
+2026-11-21
+T3 Code first; episode = start state + prompt + kept diff; chat, thinking and subagent calls excluded
+Design review with Claude Opus 5.5 and GPT-6.2 Astra; provider permission confirmed by the owner
+Project owner
+2026-11-21
+All three sources (T3 Code, Claude Code, Codex) and all projects in v1, on by default; chat, thinking and subagent calls stay excluded
+Owner decision
+Project owner
+2026-11-21
+A Tauri 2 desktop app (Rust) is the primary interface and replaces the config file; Python trainer runs as a child process; Linear-derived design, dark and light themes (ui/DESIGN.md, ui/mockup/index.html)
+Owner decision; stack checked against current crates and docs (Tauri 2.12, rusqlite, nvml-wrapper, user-idle2, starship-battery, hf-hub, uPlot)
+Project owner
+2026-11-21
+v1 targets Windows and Linux (macOS later); UI in Svelte; no default base model: the developer picks any Hugging Face or local model and its quantization, and the trainer uses Unsloth when it can and falls back to plain TRL + PEFT (with pinned custom code if needed) otherwise; M2 proven on the pilot laptop (6 GB) with a small 4-bit model; stage 4 on Windows runs in WSL2; sandbox is Docker in WSL2; agent-written kept diffs on by default; remote GPU after M2
+Owner answers to the open questions
+Project owner
+2026-11-21
+Applied the GPT-6.2 Astra design review: context retrieval no longer uses the kept diff; train/tune/promotion cohorts with lineage; source-specific authorship evidence; isolated custom-code execution; offline dependency preparation; qualified verifiers with frozen grading; gate also beats the incumbent and is enforced in the registry; hunk-level provenance; reconstruction evidence levels; Codex plain and zstd rollouts; dependency-aware Forget; run leases and WSL/Docker supervision; GPU lease; deeper compatibility check; correction scorer moved to E3; generated canaries; license manifest; E4 acceptance on the 6 GB pilot
+Review by GPT-6.2 Astra; owner decisions unchanged
+Project owner
+2026-11-21
+First-run test model was Nanbeige/Nanbeige4.2-3B; after the spike it is replaced by Qwen/Qwen3.5-2B (Unsloth) for the 6 GB laptop, fallback Qwen3-1.7B 4-bit
+No newer 2–3B model exists as of 2026-11-21 (checked Hugging Face and Unsloth uploads); Nanbeige has the strongest vendor coding numbers in the size range
+Project owner
+2026-11-23
+Anyone can run Dawnpatch: CPU only, 6 GB laptop (supported for small models), 24–80 GB GPUs, multi-GPU and DGX Spark; designed mainly for big machines. Training runs every night; promotion cadence is a user setting (nightly, weekly, monthly, or when the candidate wins by X points), always behind the gate
+Owner decision
+Project owner
+2026-11-23
+Memory (rules from corrections as checks, plus retrieval of past kept diffs) is part of the baseline; training targets are edit tool calls in unified-diff form built from verified kept edits; synthetic tasks from the user's repos are required; rejection-sampling FT before GRPO; self-distillation is the first method for corrections; DPO only on explicit pairs; GRPO only on 80 GB+; FIM off by default; no full fine-tune above about 8B; no-op patches fail the grader
+Pilot runs 1 and 2 (experiments/t3-minicpm5, experiments/t3-minicpm5-v2) and reviews by Claude Opus 5.5 and GPT-6.2 Astra
+Project owner
+Risks and mitigations
+The biggest risk is too little signal: few projects, few replayable tasks, and a small model that fails most of them at first.
+Risk
+Effect
+Mitigation
+Epic
+Too few tasks across few projects
+Overfitting; gains that don't generalise
+Synthetic tasks from the developer's repos, held-out split per project, general-coding guardrail
+E4, E8
+Too few promotion tasks per developer (the pilot produced 12 usable held-out edits from 4 threads)
+The gate waits for months, or its interval is too wide to show a few points of gain
+E2 measures eligible promotion tasks per developer first; count real tasks with running tests from Claude Code and Codex too; report "waiting for more data" with the count and an estimated date; larger gains are detectable sooner
+E2, E5
+Small model passes 0 of K attempts
+No RL signal
+Warm start on kept diffs, easy-first synthetic tasks, hints from kept diffs, self-distillation with the kept diff in the teacher's context
+E4, E8
+Gains come from the prompt, not training
+False claims of learning
+Gate compares against base + memory (rules and retrieval)
+E2, E5
+Repos that won't rebuild (Windows paths, databases, services)
+Fewer replayable tasks
+Skip with a reason, report coverage per project, cache images
+E2
+Reward hacking
+Model learns to game tests
+Read-only tests, deleted-assertion checks, hidden verifier, regression guardrail
+E2, E8
+Secrets memorised
+Leak through the model
+Scrub before storing, canary probes after training
+E1, E5
+Chat text leaks in through prompts that quote the agent
+Breaks the data rules
+Self-containment check, overlap audit, drop on hit
+E1
+App formats change (T3 has 100+ schema migrations)
+Connector breaks silently
+Schema-version detection, fixture tests from real installs, fail loudly
+E1, E9
+Night too short on laptops
+Little training per night
+Budget generation first, resume across nights, smaller K
+E6
+Forgetting general skills
+Worse on new kinds of work
+Replay buffer, KL penalty, general guardrail, weekly rebuild
+E4, E5
+Provider terms change or differ per user
+Some users can't use agent diffs
+Agent-diff training is on by default but one switch turns it off; with it off, agent and unknown-author hunks are excluded from every objective, and user diffs and the gym still work
+E1
+Trainer processes outlive a pause or an app crash
+GPU stays busy while the developer works
+Windows Job Object / Unix process group so the whole tree dies; trainer pid stored and reaped on app start; cooperative pause with a kill after the grace period
+E12
+Native Windows training stack breaks (Triton, vLLM missing)
+No training on the most common desktop OS
+Pin a tested lockfile; stages 1–3 and rejection-sampling FT native, GRPO (80 GB+ only) in WSL2; fall back to plain TRL + PEFT
+E4, E8
+A picked model has an architecture no tool supports well
+It trains slowly, cannot be quantized, or cannot be exported
+Compatibility check with ordered fallbacks; built-in Python server when GGUF export is impossible; clear badge and reason instead of a silent failure
+E4, E5, E12
+Large first-run download (CUDA torch, base model: several GB)
+Slow or failed setup
+Small installer, uv environment and model downloaded with progress and resume, shown on a first-run screen
+E11, E12
+References
+Prior work and tools the design draws on; check versions before depending on them.
+• Songe: local model that learns while idle via hindsight on-policy self-distillation; inspiration for the nightly loop, gate and undo (Apache-2.0).
+• claude-code-finetune and trace-forge: existing tools that turn agent logs into fine-tuning data.
+• mini-swe-agent: minimal agent loop, a model for the harness.
+• TRL environments, OpenPipe ART, verifiers, SkyRL: multi-turn RL training stacks.
+• SWE-RL, SWE-smith: RL and synthetic task generation for software engineering.
+• STaR: learning from the model's own successful attempts.
+• GRPO (DeepSeekMath): group-relative policy optimisation.
+• On-policy distillation and LoRA Without Regret (Thinking Machines).
+• LoRA; PEFT.
+• Provider terms: Anthropic help center on training with outputs, OpenAI terms of use.
+• Companion overview page for sharing: Dawnpatch overview.

@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dawnpatch Mockup</title>
+<style>
+:root{
+  --primary:#5e6ad2;--primary-hover:#828fff;--primary-focus:#5e69d1;
+  --ink:#f7f8f8;--ink-muted:#d0d6e0;--ink-subtle:#8a8f98;--ink-tertiary:#62666d;
+  --canvas:#010102;--s1:#0f1011;--s2:#141516;--s3:#18191a;--s4:#191a1b;
+  --line:#23252a;--line-strong:#34343a;--line-3:#3e3e44;
+  --ok:#27a644;--warn:#d9a03f;--bad:#e5484d;--hi:rgba(255,255,255,.04);
+  --sans:"Inter","Geist",-apple-system,"Segoe UI",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Geist Mono",ui-monospace,"Cascadia Code",Consolas,monospace;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --ink:#0d0e10;--ink-muted:#3c4049;--ink-subtle:#6b7079;--ink-tertiary:#9a9ea6;
+  --canvas:#fbfbfc;--s1:#ffffff;--s2:#f5f6f6;--s3:#eef0f1;--s4:#e3e5e8;
+  --line:#e6e7ea;--line-strong:#d3d5da;--line-3:#c4c7cd;
+  --ok:#1f8a39;--warn:#b07a12;--bad:#d1343a;--primary-hover:#4c58c4;--hi:rgba(0,0,0,0);
+}}
+:root[data-theme="light"]{
+  --ink:#0d0e10;--ink-muted:#3c4049;--ink-subtle:#6b7079;--ink-tertiary:#9a9ea6;
+  --canvas:#fbfbfc;--s1:#ffffff;--s2:#f5f6f6;--s3:#eef0f1;--s4:#e3e5e8;
+  --line:#e6e7ea;--line-strong:#d3d5da;--line-3:#c4c7cd;
+  --ok:#1f8a39;--warn:#b07a12;--bad:#d1343a;--primary-hover:#4c58c4;--hi:rgba(0,0,0,0);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:transparent}
+body{font-family:var(--sans);color:var(--ink);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* window */
+.app{background:var(--canvas);border:1px solid var(--line);border-radius:12px;overflow:hidden;height:720px;display:grid;grid-template-rows:36px 1fr 26px;box-shadow:inset 0 1px 0 var(--hi)}
+.titlebar{display:flex;align-items:center;gap:10px;padding:0 6px 0 12px;border-bottom:1px solid var(--line);background:var(--canvas)}
+.mark{width:16px;height:16px;border-radius:4px;background:var(--primary);display:grid;place-items:center}
+.mark svg{width:10px;height:10px}
+.brand{font-weight:600;letter-spacing:-.2px}
+.cmd{margin-left:auto;display:flex;align-items:center;gap:8px;width:min(360px,40%);height:24px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:var(--s1);color:var(--ink-tertiary);font-size:12px}
+.cmd kbd{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-subtle)}
+.winbtns{display:flex}
+.winbtns span{width:34px;height:28px;display:grid;place-items:center;color:var(--ink-subtle);border-radius:6px}
+.winbtns span:hover{background:var(--s2)}
+
+.body{display:grid;grid-template-columns:196px 1fr;min-height:0}
+.side{border-right:1px solid var(--line);padding:10px 8px;display:flex;flex-direction:column;gap:2px;min-height:0}
+.side .group{font-size:11px;font-weight:500;letter-spacing:.4px;color:var(--ink-tertiary);text-transform:uppercase;padding:10px 8px 4px}
+.nav{display:flex;align-items:center;gap:9px;height:28px;padding:0 8px;border-radius:6px;color:var(--ink-subtle);cursor:pointer;border:0;background:none;width:100%;text-align:left}
+.nav:hover{background:var(--s2);color:var(--ink-muted)}
+.nav.on{background:var(--s3);color:var(--ink)}
+.nav svg{width:15px;height:15px;flex:none}
+.nav .k{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-tertiary)}
+.nav .dot{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--primary);box-shadow:0 0 0 3px rgba(94,106,210,.18)}
+.side .foot{margin-top:auto;padding:10px 8px;border-top:1px solid var(--line);display:grid;gap:8px}
+.meter{display:grid;gap:4px}
+.meter .mr{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-subtle)}
+.bar{height:4px;background:var(--s3);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--primary);border-radius:2px}
+
+.main{overflow:auto;min-height:0;padding:20px 24px 28px}
+.main::-webkit-scrollbar{width:10px}.main::-webkit-scrollbar-thumb{background:var(--s3);border-radius:5px;border:3px solid var(--canvas)}
+.page{display:none}.page.on{display:block}
+.head{display:flex;align-items:flex-end;gap:12px;margin-bottom:16px}
+.head h1{font-size:20px;font-weight:600;letter-spacing:-.4px}
+.head p{color:var(--ink-subtle);font-size:12.5px}
+.head .acts{margin-left:auto;display:flex;gap:6px}
+
+.statusbar{display:flex;align-items:center;gap:16px;padding:0 12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--ink-subtle);white-space:nowrap;overflow:hidden}
+.statusbar b{color:var(--ink-muted);font-weight:400}
+.live{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:6px;animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.35}}
+
+/* primitives */
+.btn{height:28px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--s1);font-weight:500;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{background:var(--s2);border-color:var(--line-strong)}
+.btn.primary{background:var(--primary);border-color:transparent;color:#fff}
+.btn.primary:hover{background:var(--primary-hover)}
+.btn.ghost{background:none;border-color:transparent;color:var(--ink-subtle)}
+.btn.ghost:hover{background:var(--s2);color:var(--ink)}
+.btn.danger{color:var(--bad)}
+.btn svg{width:13px;height:13px}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0;box-shadow:inset 0 1px 0 var(--hi)}
+.card>.ch{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.card>.ch h3{font-size:13px;font-weight:500}
+.card>.ch .sub{color:var(--ink-tertiary);font-size:12px}
+.card>.ch .r{margin-left:auto;display:flex;gap:6px;align-items:center}
+.card .cb{padding:14px 16px}
+.grid{display:grid;gap:12px}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g21{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}
+.mt{margin-top:12px}
+.kpi{padding:12px 14px}
+.kpi .l{font-size:11.5px;color:var(--ink-subtle)}
+.kpi .v{font-size:20px;font-weight:600;letter-spacing:-.4px;margin-top:2px;font-family:var(--mono)}
+.kpi .d{font-size:11.5px;color:var(--ink-tertiary);margin-top:1px}
+.up{color:var(--ok)!important}.down{color:var(--bad)!important}
+.pill{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:999px;background:var(--s2);border:1px solid var(--line);color:var(--ink-muted);font-size:11px;white-space:nowrap}
+.pill i{width:6px;height:6px;border-radius:50%;background:var(--ink-tertiary)}
+.pill.ok i{background:var(--ok)}.pill.run i{background:var(--primary)}.pill.warn i{background:var(--warn)}.pill.bad i{background:var(--bad)}
+.tag{font-family:var(--mono);font-size:11px;color:var(--ink-subtle);background:var(--s3);border-radius:4px;padding:1px 6px}
+.muted{color:var(--ink-subtle)}.faint{color:var(--ink-tertiary)}
+
+/* stepper */
+.steps{display:grid;grid-template-columns:repeat(8,1fr);gap:4px}
+@media (max-width:880px){.steps{grid-template-columns:repeat(4,1fr);row-gap:10px}}
+.step{display:grid;gap:6px}
+.step .t{height:3px;border-radius:2px;background:var(--s3)}
+.step.done .t{background:var(--ink-tertiary)}
+.step.cur .t{background:linear-gradient(90deg,var(--primary) 62%,var(--s3) 62%)}
+.step .n{font-size:11.5px;color:var(--ink-tertiary);display:flex;gap:6px;align-items:center}
+.step.done .n{color:var(--ink-subtle)}.step.cur .n{color:var(--ink)}
+.step .n .num{font-size:10.5px}
+
+/* lists / tables */
+table{width:100%;border-collapse:collapse}
+th{font-weight:500;font-size:11.5px;color:var(--ink-tertiary);text-align:left;padding:8px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--s2)}
+td.r,th.r{text-align:right}
+.log{font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--ink-subtle);padding:10px 16px;max-height:168px;overflow:auto}
+.log .ts{color:var(--ink-tertiary);margin-right:10px}
+.log .hi{color:var(--ink-muted)}
+
+/* forms */
+.field{display:grid;gap:5px}
+.field label{font-size:11.5px;color:var(--ink-subtle)}
+.input{height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--canvas);width:100%;outline:none}
+.input:focus{border-color:var(--line-strong);box-shadow:0 0 0 2px rgba(94,105,209,.5)}
+.input.mono{font-size:12px}
+.inline{display:flex;align-items:center;gap:8px}
+.inline .input{width:72px;text-align:right;font-family:var(--mono)}
+.seg{display:inline-flex;padding:2px;border-radius:8px;background:var(--canvas);border:1px solid var(--line);gap:2px}
+.seg button{height:24px;padding:0 10px;border:0;border-radius:6px;background:none;color:var(--ink-subtle);cursor:pointer;font-size:12px;font-weight:500}
+.seg button.on{background:var(--s3);color:var(--ink)}
+.row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .tx{display:grid;gap:1px;min-width:0}
+.row .tx b{font-weight:500}
+.row .tx span{font-size:12px;color:var(--ink-subtle)}
+.row .end{margin-left:auto;display:flex;align-items:center;gap:8px}
+.sw{position:relative;width:28px;height:16px;flex:none;cursor:pointer}
+.sw input{opacity:0;position:absolute;inset:0;cursor:pointer}
+.sw i{position:absolute;inset:0;border-radius:999px;background:var(--s4);border:1px solid var(--line-strong);transition:.15s}
+.sw i:after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:var(--ink-subtle);transition:.15s}
+.sw input:checked+i{background:var(--primary);border-color:transparent}
+.sw input:checked+i:after{left:14px;background:#fff}
+.lock{display:inline-flex;gap:5px;align-items:center;font-size:11.5px;color:var(--ink-tertiary)}
+.lock svg{width:12px;height:12px}
+
+/* model list */
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:12px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);cursor:pointer}
+.mrow:last-child{border-bottom:0}
+.mrow:hover{background:var(--s2)}
+.mrow.sel{background:var(--s2);box-shadow:inset 2px 0 0 var(--primary)}
+.mrow .nm{font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.mrow .meta{font-size:11.5px;color:var(--ink-tertiary)}
+.dl{display:grid;gap:6px;padding:12px 16px;border-top:1px solid var(--line)}
+
+/* schedule week */
+.week{display:grid;grid-template-columns:34px repeat(24,1fr);gap:2px;font-size:10px;color:var(--ink-tertiary);font-family:var(--mono)}
+.week .c{height:16px;border-radius:3px;background:var(--s3)}
+.week .c.a{background:rgba(94,106,210,.55)}
+.week .c.r{background:var(--primary)}
+.week .hl{text-align:center}
+
+.check{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12.5px}
+.check svg{width:14px;height:14px;flex:none}
+.legend{display:flex;gap:14px;font-size:11.5px;color:var(--ink-subtle)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:2px;border-radius:1px;display:inline-block}
+canvas{display:block;width:100%}
+.mixbar{display:flex;height:8px;border-radius:4px;overflow:hidden;gap:2px}
+.mixrow{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
+.mixrow span:first-child{display:flex;align-items:center;gap:7px}
+.mixrow i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px}
+.kv dt{color:var(--ink-subtle)}.kv dd{font-family:var(--mono);text-align:right;color:var(--ink-muted)}
+
+/* narrow (inline preview) */
+@media (max-width:880px){
+  .body{grid-template-columns:52px 1fr}
+  .side .group,.nav .lbl,.nav .k,.side .foot{display:none}
+  .nav{justify-content:center;padding:0}
+  .nav .dot{position:absolute;margin:0;transform:translate(9px,-8px);width:5px;height:5px}
+  .nav{position:relative}
+  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g21,.g3{grid-template-columns:1fr}
+  .main{padding:16px}
+  .cmd{display:none}
+  .hide-n{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="mark"><svg viewBox="0 0 10 10"><path d="M1 7.5h8M2.5 5.5a2.5 2.5 0 0 1 5 0" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></div>
+    <span class="brand">Dawnpatch</span>
+    <span class="pill run" id="tbState"><i></i>Training · step <span class="num" id="tbStep">1,240</span></span>
+    <div class="cmd"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search settings, models, runs…<kbd>Ctrl K</kbd></div>
+    <button class="btn ghost themebtn" id="themeBtn" title="Toggle theme" style="margin-left:auto;height:26px;padding:0 8px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button><div class="winbtns"><span>–</span><span>▢</span><span>✕</span></div>
+  </div>
+
+  <div class="body">
+    <nav class="side" id="nav"></nav>
+    <main class="main" id="main">
+
+<!-- OVERVIEW -->
+<section class="page on" data-page="overview">
+  <div class="head"><div><h1>Overview</h1><p>Training tonight's candidate. Stops the moment you're back.</p></div>
+    <div class="acts"><button class="btn"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>Pause</button><button class="btn primary" data-go="training">Open run</button></div></div>
+  <div class="grid g4">
+    <div class="card kpi"><div class="l">Serving</div><div class="v">v14</div><div class="d">Qwen2.5-Coder-7B · QLoRA</div></div>
+    <div class="card kpi"><div class="l">Pass@1 vs base + memory</div><div class="v up">+4.1</div><div class="d">95% CI +1.2 … +7.0</div></div>
+    <div class="card kpi"><div class="l">Episodes</div><div class="v">9,812</div><div class="d">+184 since last night</div></div>
+    <div class="card kpi"><div class="l">Next window</div><div class="v">23:00</div><div class="d">idle ≥ 15m · on AC</div></div>
+  </div>
+  <div class="card mt"><div class="ch"><h3>Tonight</h3><span class="sub">run #32 · started 23:04</span><div class="r"><span class="pill run"><i></i>Train · 62%</span></div></div>
+    <div class="cb"><div class="steps" id="stepsA"></div></div></div>
+  <div class="grid g21 mt">
+    <div class="card"><div class="ch"><h3>Loss</h3><div class="r legend"><span><i style="background:var(--primary)"></i>train</span><span><i style="background:var(--ink-subtle)"></i>eval</span></div></div><div class="cb"><canvas id="lossMini" height="150"></canvas></div></div>
+    <div class="card"><div class="ch"><h3>Last 7 nights</h3></div>
+      <table><tbody>
+        <tr><td class="num">v14</td><td><span class="pill ok"><i></i>Promoted</span></td><td class="r num up">+1.3</td></tr>
+        <tr><td class="num">v13</td><td><span class="pill ok"><i></i>Promoted</span></td><td class="r num up">+0.9</td></tr>
+        <tr><td class="num">—</td><td><span class="pill bad"><i></i>Rejected</span></td><td class="r num down">−0.4</td></tr>
+        <tr><td class="num">v12</td><td><span class="pill ok"><i></i>Promoted</span></td><td class="r num up">+2.0</td></tr>
+        <tr><td class="num">—</td><td><span class="pill warn"><i></i>Waiting</span></td><td class="r faint">48/50 tasks</td></tr>
+      </tbody></table></div>
+  </div>
+</section>
+
+<!-- TRAINING -->
+<section class="page" data-page="training">
+  <div class="head"><div><h1>Training</h1><p>Run #32 · Qwen2.5-Coder-7B-Instruct · QLoRA r64</p></div>
+    <div class="acts"><button class="btn">Pause</button><button class="btn danger">Stop</button><button class="btn primary">Run now</button></div></div>
+  <div class="card"><div class="cb"><div class="steps" id="stepsB"></div></div></div>
+  <div class="grid g21 mt">
+    <div class="card"><div class="ch"><h3>Loss</h3><span class="sub num" id="lossNow">train 0.412 · eval 0.468</span><div class="r legend"><span><i style="background:var(--primary)"></i>train</span><span><i style="background:var(--ink-subtle)"></i>eval</span></div></div>
+      <div class="cb"><canvas id="loss" height="230"></canvas></div></div>
+    <div class="card"><div class="ch"><h3>Run</h3></div><div class="cb">
+      <dl class="kv">
+        <dt>Step</dt><dd id="kvStep">1,240 / 2,000</dd>
+        <dt>Epoch</dt><dd>1.24 / 2</dd>
+        <dt>Learning rate</dt><dd>1.6e-4</dd>
+        <dt>Eff. batch</dt><dd>16</dd>
+        <dt>Context</dt><dd>16,384</dd>
+        <dt>Tokens/s</dt><dd>3,920</dd>
+        <dt>ETA</dt><dd>38m</dd>
+      </dl>
+      <div style="height:14px"></div>
+      <div class="muted" style="font-size:11.5px;margin-bottom:6px">Data mix</div>
+      <div class="mixbar"><i style="flex:15;background:#828fff"></i><i style="flex:40;background:var(--primary)"></i><i style="flex:15;background:#7a7fad"></i><i style="flex:30;background:var(--line-3)"></i></div>
+      <div style="margin-top:8px">
+        <div class="mixrow"><span><i style="background:#828fff"></i>fim</span><span class="num muted">15%</span></div>
+        <div class="mixrow"><span><i style="background:var(--primary)"></i>prompt2diff</span><span class="num muted">40%</span></div>
+        <div class="mixrow"><span><i style="background:#7a7fad"></i>correction ×2</span><span class="num muted">15%</span></div>
+        <div class="mixrow"><span><i style="background:var(--line-3)"></i>replay</span><span class="num muted">30%</span></div>
+      </div>
+    </div></div>
+  </div>
+  <div class="grid g3 mt">
+    <div class="card"><div class="ch"><h3>GPU</h3><span class="r num muted" id="gpuV">87%</span></div><div class="cb"><canvas id="gpu" height="54"></canvas></div></div>
+    <div class="card"><div class="ch"><h3>VRAM</h3><span class="r num muted">19.2 / 24 GB</span></div><div class="cb"><canvas id="vram" height="54"></canvas></div></div>
+    <div class="card"><div class="ch"><h3>Temp</h3><span class="r num muted" id="tempV">71°C</span></div><div class="cb"><canvas id="temp" height="54"></canvas></div></div>
+  </div>
+  <div class="card mt"><div class="ch"><h3>Now training on</h3><span class="sub">batch 1240</span></div>
+    <table><thead><tr><th>Episode</th><th>Project</th><th>Dataset</th><th class="hide-n">Source</th><th class="r">Tokens</th></tr></thead><tbody id="nowTbl"></tbody></table></div>
+  <div class="card mt"><div class="ch"><h3>Log</h3><div class="r"><button class="btn ghost">Copy</button></div></div><div class="log" id="log"></div></div>
+</section>
+
+<!-- MODEL -->
+<section class="page" data-page="model">
+  <div class="head"><div><h1>Model</h1><p>Any Hugging Face or local model; no default. Changing it triggers a full rebuild.</p></div></div>
+  <div class="card"><div class="ch"><h3>Base model</h3><div class="r"><div class="seg" id="srcSeg"><button class="on" data-s="hf">Hugging Face</button><button data-s="local">Local file</button></div></div></div>
+    <div id="srcHf">
+      <div class="cb" style="display:flex;gap:8px"><input class="input mono" value="coder instruct" placeholder="Search Hugging Face, or paste org/repo"><button class="btn">Search</button></div>
+      <div id="mlist"></div>
+      <div class="dl"><div style="display:flex;justify-content:space-between;font-size:12px"><span><span class="mono">Qwen2.5-Coder-14B-Instruct</span> <span class="faint">· downloading</span></span><span class="num muted">11.8 / 29.5 GB · 84 MB/s</span></div><div class="bar"><i style="width:40%"></i></div></div>
+    </div>
+    <div id="srcLocal" style="display:none"><div class="cb grid" style="gap:10px">
+      <div class="field"><label>Model folder (Hugging Face format) or a .gguf file</label><div style="display:flex;gap:8px"><input class="input mono" value="D:\models\Qwen2.5-Coder-7B-Instruct"><button class="btn">Browse…</button></div></div>
+      <div class="pill ok" style="justify-self:start"><i></i>Detected · Qwen2 architecture · 7.6B · bf16 · Unsloth · fits in 4-bit</div>
+    </div></div>
+  </div>
+  <div class="card mt"><div class="ch"><h3>Variants &amp; quantization</h3><span class="sub mono">Qwen/Qwen2.5-Coder-7B-Instruct</span><div class="r"><span class="muted" style="font-size:11.5px">Train in</span><div class="seg"><button class="on">4-bit</button><button>8-bit</button><button>16-bit</button></div></div></div>
+    <table><thead><tr><th>Repo</th><th>Format</th><th class="r">Size</th><th class="hide-n">Trains with</th><th class="r">Use</th></tr></thead><tbody>
+      <tr><td class="mono">Qwen/Qwen2.5-Coder-7B-Instruct</td><td><span class="tag">bf16</span></td><td class="r num">15.2 GB</td><td class="hide-n muted">Unsloth · QLoRA on the fly</td><td class="r"><span class="pill run"><i></i>Selected</span></td></tr>
+      <tr><td class="mono">unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit</td><td><span class="tag">bnb 4-bit</span></td><td class="r num">5.5 GB</td><td class="hide-n muted">Unsloth · smaller download</td><td class="r"><button class="btn ghost">Use</button></td></tr>
+      <tr><td class="mono">Qwen/Qwen2.5-Coder-7B-Instruct-AWQ</td><td><span class="tag">AWQ 4-bit</span></td><td class="r num">5.6 GB</td><td class="hide-n muted">PEFT · LoRA on frozen weights</td><td class="r"><button class="btn ghost">Use</button></td></tr>
+      <tr><td class="mono">Qwen/Qwen2.5-Coder-7B-Instruct-GPTQ-Int4</td><td><span class="tag">GPTQ 4-bit</span></td><td class="r num">5.6 GB</td><td class="hide-n muted">PEFT · LoRA on frozen weights</td><td class="r"><button class="btn ghost">Use</button></td></tr>
+      <tr><td class="mono">Qwen/Qwen2.5-Coder-7B-Instruct-GGUF</td><td><span class="tag">GGUF</span></td><td class="r num">4.7 GB</td><td class="hide-n faint">Serve only · trains from the original</td><td class="r"><button class="btn ghost">Use</button></td></tr>
+    </tbody></table>
+    <div class="cb" style="border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="pill ok"><i></i>Compatibility check passed</span><span class="muted num" style="font-size:12px">Unsloth · 4-bit · peak 5.1 GB · context 6,144 · serves via Ollama, LM Studio, llama.cpp</span><button class="btn ghost" style="margin-left:auto">Re-run check</button></div>
+  </div>
+  <div class="grid g2 mt">
+    <div class="card"><div class="ch"><h3>Method</h3><div class="r"><div class="seg"><button class="on">Auto</button><button>LoRA</button><button>QLoRA</button><button>DoRA</button><button>Full</button></div></div></div>
+      <div class="cb muted" style="font-size:12px">Auto suggests <b style="color:var(--ink)">QLoRA</b> for a 7B on 24 GB, leaving room for 16k context. Every option stays selectable; choices that may not fit show the memory estimate and a <b style="color:var(--ink)">Use anyway</b> button.</div></div>
+    <div class="card"><div class="ch"><h3>Stages</h3></div>
+      <div class="row"><div class="tx"><b>1 · Fill-in-the-middle</b><span>Off by default; on only if it wins</span></div><div class="end"><label class="sw"><input type="checkbox"><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>2 · Kept edits (SFT)</b><span>Request + context → apply_patch with the edit you kept</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>3 · Taste from corrections</b><span>Self-distillation; DPO on explicit rejections</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>4 · Practice gym</b><span>Synthetic tasks from your repos; keeps its passing attempts. GRPO on 80 GB+</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+    </div>
+  </div>
+  <div class="card mt"><div class="ch"><h3>Hyperparameters</h3><div class="r"><button class="btn ghost">Reset to defaults</button></div></div>
+    <div class="cb grid g4">
+      <div class="field"><label>LoRA rank</label><input class="input mono" value="64"></div>
+      <div class="field"><label>Alpha</label><input class="input mono" value="128"></div>
+      <div class="field"><label>Learning rate</label><input class="input mono" value="2e-4"></div>
+      <div class="field"><label>Epochs / night</label><input class="input mono" value="2"></div>
+      <div class="field"><label>Effective batch</label><input class="input mono" value="16"></div>
+      <div class="field"><label>Context (tokens)</label><input class="input mono" value="16384"></div>
+      <div class="field"><label>Replay buffer</label><input class="input mono" value="30%"></div>
+      <div class="field"><label>Grad clip</label><input class="input mono" value="1.0"></div>
+    </div></div>
+</section>
+
+<!-- DATA -->
+<section class="page" data-page="data">
+  <div class="head"><div><h1>Data</h1><p>Where episodes come from. Read-only; nothing in these apps is ever changed.</p></div><div class="acts"><button class="btn">Scan now</button></div></div>
+  <div class="grid g3">
+    <div class="card"><div class="row" style="border:0"><div class="tx"><b>T3 Code</b><span class="num">6,204 episodes · checkpoints</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div></div>
+    <div class="card"><div class="row" style="border:0"><div class="tx"><b>Claude Code</b><span class="num">2,311 episodes · reconstructed</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div></div>
+    <div class="card"><div class="row" style="border:0"><div class="tx"><b>Codex</b><span class="num">1,297 episodes · by timestamp</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div></div>
+  </div>
+  <div class="card mt"><div class="ch"><h3>Projects</h3><span class="sub">17 found · all enabled</span><div class="r"><button class="btn ghost">Disable all</button></div></div>
+    <table><thead><tr><th>Project</th><th class="r">Episodes</th><th class="r">Corrections</th><th class="r hide-n">Replayable</th><th class="hide-n">Verifier</th><th class="r">Use</th></tr></thead><tbody id="projTbl"></tbody></table></div>
+  <div class="grid g2 mt">
+    <div class="card"><div class="ch"><h3>Used for training</h3></div>
+      <div class="row"><div class="tx"><b>Your prompts &amp; corrections</b><span>Inputs and rules only</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>Your own diffs</b><span>Always allowed</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>Agent-written kept diffs</b><span>On by default · needs your providers' permission</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>Repo code (FIM)</b><span>Files at checkpoints</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+    </div>
+    <div class="card"><div class="ch"><h3>Never used</h3><span class="sub">dropped at import</span></div>
+      <div class="row"><div class="tx"><b>Agent chat replies</b><span>Claude / Codex messages to you</span></div><div class="end lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Locked</div></div>
+      <div class="row"><div class="tx"><b>Thinking / reasoning</b><span>Never stored</span></div><div class="end lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Locked</div></div>
+      <div class="row"><div class="tx"><b>Subagent calls</b><span>Including child threads</span></div><div class="end lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Locked</div></div>
+      <div class="row"><div class="tx"><b>Secrets</b><span>Any hit drops the whole record</span></div><div class="end lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Locked</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- SCHEDULE -->
+<section class="page" data-page="schedule">
+  <div class="head"><div><h1>Schedule</h1><p>When a run may start, when it must stop, and when it tests.</p></div></div>
+  <div class="card"><div class="ch"><h3>This week</h3><div class="r legend"><span><i style="background:rgba(94,106,210,.55);height:8px;width:8px;border-radius:2px"></i>allowed</span><span><i style="background:var(--primary);height:8px;width:8px;border-radius:2px"></i>ran</span></div></div><div class="cb"><div class="week" id="week"></div></div></div>
+  <div class="grid g3 mt">
+    <div class="card"><div class="ch"><h3>Start when</h3></div>
+      <div class="row"><div class="tx"><b>Idle for</b></div><div class="end inline"><input class="input" value="15"><span class="muted">min</span></div></div>
+      <div class="row"><div class="tx"><b>Between</b></div><div class="end inline"><input class="input" value="23:00"><span class="muted">–</span><input class="input" value="07:00"></div></div>
+      <div class="row"><div class="tx"><b>On AC power</b></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>GPU is free</b><span>No game / other job</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>No agent activity</b></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+    </div>
+    <div class="card"><div class="ch"><h3>Stop when</h3></div>
+      <div class="row"><div class="tx"><b>I'm back</b><span>Pause in ≤ 10 s, resume later</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>Clock hits</b></div><div class="end inline"><input class="input" value="07:30"></div></div>
+      <div class="row"><div class="tx"><b>GPU above</b></div><div class="end inline"><input class="input" value="83"><span class="muted">°C</span></div></div>
+      <div class="row"><div class="tx"><b>RAM above</b></div><div class="end inline"><input class="input" value="90"><span class="muted">%</span></div></div>
+      <div class="row"><div class="tx"><b>Run longer than</b></div><div class="end inline"><input class="input" value="6"><span class="muted">h</span></div></div>
+    </div>
+    <div class="card"><div class="ch"><h3>Test when</h3></div>
+      <div class="row"><div class="tx"><b>After every training run</b></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>Min. held-out tasks</b><span>Never below 50; gate enforced</span></div><div class="end inline"><input class="input" value="50"></div></div>
+      <div class="row"><div class="tx"><b>General benchmark</b><span>HumanEval+ slice</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+      <div class="row"><div class="tx"><b>Full rebuild</b></div><div class="end"><div class="seg"><button class="on">Weekly</button><button>Never</button></div></div></div>
+      <div class="row"><div class="tx"><b>Time budget for tests</b></div><div class="end inline"><input class="input" value="35"><span class="muted">%</span></div></div>
+    </div>
+    <div class="card"><div class="ch"><h3>Use a new version</h3></div>
+      <div class="row"><div class="tx"><b>Promote</b><span>Training still runs every night; the gate always applies</span></div><div class="end"><div class="seg"><button>Nightly</button><button class="on">Weekly</button><button>Monthly</button><button>Wins by</button></div></div></div>
+      <div class="row"><div class="tx"><b>Wins by at least</b><span>Lower bound of pass@1 gain over the served version</span></div><div class="end inline"><input class="input" value="3"><span class="muted">pts</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- EVALUATION -->
+<section class="page" data-page="evaluation">
+  <div class="head"><div><h1>Evaluation</h1><p>Every candidate vs base + the same memory (rules and past fixes), on tasks it never saw.</p></div><div class="acts"><button class="btn">Run eval</button></div></div>
+  <div class="card"><div class="ch"><h3>Held-out pass@1 by version</h3><div class="r legend"><span><i style="background:var(--primary)"></i>served model</span><span><i style="background:var(--ink-subtle)"></i>base + memory</span></div></div><div class="cb"><canvas id="evalc" height="190"></canvas></div></div>
+  <div class="grid g21 mt">
+    <div class="card"><div class="ch"><h3>Last run</h3><span class="sub num">212 tasks · 4 contestants</span></div>
+      <table><thead><tr><th>Contestant</th><th class="r">Pass@1</th><th class="r hide-n">Repeat corr.</th><th class="r">Δ vs baseline</th></tr></thead><tbody>
+        <tr><td>Base, no memory</td><td class="r num">31.6%</td><td class="r num hide-n">22%</td><td class="r num down">−3.3</td></tr>
+        <tr><td>Base + memory <span class="tag">baseline</span></td><td class="r num">34.9%</td><td class="r num hide-n">14%</td><td class="r num faint">—</td></tr>
+        <tr><td>v13 + memory</td><td class="r num">37.7%</td><td class="r num hide-n">11%</td><td class="r num up">+2.8</td></tr>
+        <tr><td>v14 + memory <span class="tag">candidate</span></td><td class="r num">39.0%</td><td class="r num hide-n">9%</td><td class="r num up">+4.1</td></tr>
+      </tbody></table></div>
+    <div class="card"><div class="ch"><h3>Promotion gate</h3><span class="r pill ok"><i></i>Pass</span></div><div class="cb" id="gate"></div></div>
+  </div>
+</section>
+
+<!-- VERSIONS -->
+<section class="page" data-page="versions">
+  <div class="head"><div><h1>Versions</h1><p>The served model is a pointer. Undo moves it back one step.</p></div><div class="acts"><button class="btn">Undo</button></div></div>
+  <div class="card"><div class="ch"><h3>Endpoint</h3><span class="sub">OpenAI-compatible · name never changes</span></div>
+    <div class="cb" style="display:flex;gap:8px;flex-wrap:wrap"><input class="input mono" style="flex:1;min-width:220px" value="http://127.0.0.1:11435/v1  ·  model: dawnpatch" readonly><button class="btn">Copy</button></div></div>
+  <div class="card mt"><table><thead><tr><th>Version</th><th>Date</th><th class="hide-n">Base</th><th class="r">Pass@1</th><th>Status</th><th class="r"></th></tr></thead><tbody>
+    <tr><td class="num">v14</td><td class="num muted">Nov 21</td><td class="hide-n mono muted">Qwen2.5-Coder-7B</td><td class="r num">39.0%</td><td><span class="pill run"><i></i>Serving</span></td><td class="r"><button class="btn ghost">Export</button></td></tr>
+    <tr><td class="num">v13</td><td class="num muted">Nov 20</td><td class="hide-n mono muted">Qwen2.5-Coder-7B</td><td class="r num">37.7%</td><td><span class="pill"><i></i>Previous</span></td><td class="r"><button class="btn ghost">Use</button></td></tr>
+    <tr><td class="num">v12</td><td class="num muted">Nov 18</td><td class="hide-n mono muted">Qwen2.5-Coder-7B</td><td class="r num">36.8%</td><td><span class="pill"><i></i>Kept</span></td><td class="r"><button class="btn ghost">Use</button></td></tr>
+    <tr><td class="num faint">cand.</td><td class="num muted">Nov 19</td><td class="hide-n mono muted">Qwen2.5-Coder-7B</td><td class="r num">36.4%</td><td><span class="pill bad"><i></i>Rejected</span></td><td class="r"><button class="btn ghost">Why</button></td></tr>
+  </tbody></table></div>
+  <div class="card mt"><div class="ch"><h3>Export</h3></div><div class="cb" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn">Ollama</button><button class="btn">LM Studio</button><button class="btn">llama.cpp</button><button class="btn">vLLM</button><button class="btn">mlx-lm</button></div></div>
+</section>
+
+<!-- RULES -->
+<section class="page" data-page="rules">
+  <div class="head"><div><h1>Memory</h1><p>Rules learned from your corrections, checked before the agent finishes, plus similar past fixes. Works on every machine, before any training.</p></div></div>
+  <div class="card" id="rulesList"></div>
+</section>
+
+<!-- SETTINGS -->
+<section class="page" data-page="settings">
+  <div class="head"><div><h1>Settings</h1><p>Everything lives in the app. No config files.</p></div></div>
+  <div class="card">
+    <div class="row"><div class="tx"><b>Hardware</b><span class="mono">RTX 4090 · 24 GB · CUDA 12.6 · 64 GB RAM</span></div><div class="end"><button class="btn">Recalibrate</button></div></div>
+    <div class="row"><div class="tx"><b>Data folder</b><span class="mono">C:\Users\you\AppData\Local\Dawnpatch</span></div><div class="end"><button class="btn">Change</button></div></div>
+    <div class="row"><div class="tx"><b>Theme</b><span>Follows the OS by default</span></div><div class="end"><div class="seg" id="themeSeg"><button class="on" data-t="system">System</button><button data-t="dark">Dark</button><button data-t="light">Light</button></div></div></div>
+    <div class="row"><div class="tx"><b>Launch at login</b><span>Lives in the tray</span></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+    <div class="row"><div class="tx"><b>Morning notification</b></div><div class="end"><label class="sw"><input type="checkbox" checked><i></i></label></div></div>
+    <div class="row"><div class="tx"><b>Encrypt data at rest</b><span>Key in OS keychain</span></div><div class="end"><label class="sw"><input type="checkbox"><i></i></label></div></div>
+    <div class="row"><div class="tx"><b>Remote GPU</b><span>Off. Shows exactly what is uploaded first.</span></div><div class="end"><label class="sw"><input type="checkbox"><i></i></label></div></div>
+    <div class="row"><div class="tx"><b>Settings backup</b><span>Optional export / import</span></div><div class="end"><button class="btn ghost">Export</button><button class="btn ghost">Import</button></div></div>
+    <div class="row"><div class="tx"><b>Forget</b><span>Delete episodes for a project or everything</span></div><div class="end"><button class="btn danger">Forget…</button></div></div>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+  <div class="statusbar">
+    <span><span class="live"></span><b>Training</b></span>
+    <span>step <b id="sbStep">1,240</b>/2,000</span>
+    <span>loss <b id="sbLoss">0.412</b></span>
+    <span class="hide-n">RTX 4090 <b id="sbGpu">87%</b></span>
+    <span class="hide-n">VRAM <b>19.2/24 GB</b></span>
+    <span class="hide-n"><b id="sbTemp">71°C</b></span>
+    <span style="margin-left:auto">idle <b>14m</b></span>
+  </div>
+</div>
+
+<script>
+const cv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let theme='system';try{theme=localStorage.getItem('dp-theme')||'system'}catch(e){}
+function setTheme(t){theme=t;if(t==='system')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('dp-theme',t)}catch(e){}document.querySelectorAll('#themeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));if(window.drawAll)drawAll()}
+const I={
+ overview:'<path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/>',
+ training:'<path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/>',
+ model:'<path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/>',
+ data:'<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+ schedule:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ evaluation:'<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>',
+ versions:'<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="9" r="2"/><path d="M6 8v8M18 11c0 4-6 3-10 6"/>',
+ rules:'<path d="M4 6h16M4 12h10M4 18h7"/>',
+ settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'
+};
+const svg=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const NAV=[['g','Run'],['overview','Overview','1'],['training','Training','2',1],['g','Configure'],['model','Model','3'],['data','Data','4'],['schedule','Schedule','5'],['g','Results'],['evaluation','Evaluation','6'],['versions','Versions','7'],['rules','Memory','8'],['settings','Settings',',']];
+const nav=document.getElementById('nav');
+nav.innerHTML=NAV.map(n=>n[0]==='g'?`<div class="group">${n[1]}</div>`:`<button class="nav${n[0]==='overview'?' on':''}" data-go="${n[0]}" title="${n[1]}">${svg(I[n[0]])}<span class="lbl">${n[1]}</span>${n[3]?'<span class="dot"></span>':`<span class="k">${n[2]}</span>`}</button>`).join('')+
+ `<div class="foot"><div class="meter"><div class="mr"><span>GPU</span><span class="num" id="ftGpu">87%</span></div><div class="bar"><i id="ftGpuB" style="width:87%"></i></div></div><div class="meter"><div class="mr"><span>VRAM</span><span class="num">19.2 GB</span></div><div class="bar"><i style="width:80%"></i></div></div></div>`;
+function go(p){document.querySelectorAll('.page').forEach(s=>s.classList.toggle('on',s.dataset.page===p));document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.go===p));document.getElementById('main').scrollTop=0;requestAnimationFrame(drawAll)}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-go]');if(t)go(t.dataset.go);const s=e.target.closest('.seg button');if(s){s.parentNode.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===s));if(s.dataset.t)setTheme(s.dataset.t);if(s.dataset.s){srcHf.style.display=s.dataset.s==='hf'?'':'none';srcLocal.style.display=s.dataset.s==='local'?'':'none'}}const m=e.target.closest('.mrow');if(m){document.querySelectorAll('.mrow').forEach(r=>r.classList.toggle('sel',r===m))}});
+document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;const n=NAV.find(n=>n[2]===e.key);if(n)go(n[0])});
+
+const STEPS=['Import','Scrub & audit','Memory','Datasets','Practice','Train','Evaluate','Promote'];
+const stepsHtml=STEPS.map((s,i)=>`<div class="step ${i<5?'done':i===5?'cur':''}"><div class="t"></div><div class="n"><span class="num">${i+1}</span>${s}</div></div>`).join('');
+stepsA.innerHTML=stepsB.innerHTML=stepsHtml;
+
+const MODELS=[['Qwen/Qwen2.5-Coder-7B-Instruct','7.6B · 15.2 GB','fits','Unsloth',1],['Nanbeige/Nanbeige4.2-3B','4.2B · 8.3 GB','fits','Custom code'],['Qwen/Qwen3-4B-Instruct-2507','4.0B · 8.0 GB','fits','Unsloth'],['ibm-granite/granite-8b-code-instruct-4k','8.1B · 16.1 GB','fits','Standard'],['Qwen/Qwen2.5-Coder-32B-Instruct','32.8B · 65.5 GB','may not fit','Unsloth']];
+mlist.innerHTML=MODELS.map(m=>`<div class="mrow${m[4]?' sel':''}"><span class="nm">${m[0]}</span><span class="meta num hide-n">${m[1]}</span><span class="pill ${m[2]==='fits'?'ok':'warn'}"><i></i>${m[2]}</span><span class="meta"><span class="tag">${m[3]}</span>${m[4]?' <span class="tag">installed</span>':''}</span></div>`).join('');
+
+const PROJ=[['dawnpatch',1204,212,388,'npm test'],['t3-frontend',2140,401,702,'vitest'],['api-server',986,155,301,'pytest'],['infra-scripts',402,38,0,'—'],['mobile-app',1311,190,240,'jest'],['docs-site',288,22,61,'npm run build']];
+projTbl.innerHTML=PROJ.map(p=>`<tr><td class="mono">${p[0]}</td><td class="r num">${p[1].toLocaleString()}</td><td class="r num">${p[2]}</td><td class="r num hide-n">${p[3]}</td><td class="hide-n">${p[4]==='—'?'<span class="faint">none found</span>':`<span class="tag">${p[4]}</span>`}</td><td class="r"><label class="sw" style="display:inline-block"><input type="checkbox" checked><i></i></label></td></tr>`).join('');
+
+const NOW=[['t3:865581af:3','t3-frontend','correction','T3 · claudeAgent',4210],['t3:1c0e77d2:1','api-server','prompt2diff','T3 · codex',6802],['cc:9fa1:12','mobile-app','prompt2diff','Claude Code',3990],['fim:dawnpatch:src/gate.rs','dawnpatch','fim','repo code',2048]];
+nowTbl.innerHTML=NOW.map(n=>`<tr><td class="mono muted">${n[0]}</td><td class="mono">${n[1]}</td><td><span class="tag">${n[2]}</span></td><td class="muted hide-n">${n[3]}</td><td class="r num">${n[4].toLocaleString()}</td></tr>`).join('');
+
+const LOG=[['23:04:11','import  +184 episodes (t3 141, claude 29, codex 14)'],['23:04:40','scrub   2 records dropped (secret match)'],['23:04:41','audit   0 chat / thinking / subagent fields  <span class="up">clean</span>'],['23:06:02','dataset fim 1,840 · prompt2diff 4,910 · correction 1,822 · replay 3,700'],['23:06:30','train   QLoRA r64 α128 lr 2e-4 · ctx 16384 · bs 16'],['23:41:12','train   step 1000  loss 0.448  eval 0.491'],['23:52:40','train   step 1240  loss 0.412  eval 0.468']];
+log.innerHTML=LOG.map(l=>`<div><span class="ts">${l[0]}</span><span class="${l[1].startsWith('train   step')?'hi':''}">${l[1]}</span></div>`).join('');
+
+const RULES=[['Prefer the smallest change that fixes it','12 corrections · all projects · judge rubric',1],['Use pnpm, never npm, in t3-frontend','7 corrections · t3-frontend · check: grep for npm',1],['Don\'t add comments that restate the code','5 corrections · all projects',1],['Tests go next to the file, not in /tests','3 corrections · mobile-app',0]];
+rulesList.innerHTML=RULES.map(r=>`<div class="row"><div class="tx"><b>${r[0]}</b><span>${r[1]}</span></div><div class="end">${r[2]?'<span class="pill ok"><i></i>Approved</span>':'<span class="pill warn"><i></i>Suggested</span><button class="btn primary">Approve</button>'}<button class="btn ghost">Edit</button><button class="btn ghost">Remove</button></div></div>`).join('');
+
+const ok='<svg viewBox="0 0 24 24" fill="none" stroke="#27a644" stroke-width="2.4"><path d="M5 12l5 5 9-10"/></svg>';
+gate.innerHTML=[['Beats base + memory (lower bound above zero, weekly level)','+1.2 … +7.0'],['Not worse than serving v13','+1.3 · 3 losses'],['Repeated corrections not up','14% → 9%'],['General coding ≥ −1 pt','−0.3'],['Tool errors / regressions not up','0 / 0'],['Data audit clean','0 hits'],['≥ 50 eligible promotion tasks','212']].map(g=>`<div class="check">${ok}<span>${g[0]}</span><span class="num faint" style="margin-left:auto">${g[1]}</span></div>`).join('');
+
+// week grid
+let w='<span></span>'+Array.from({length:24},(_,h)=>`<span class="hl">${h%6===0?h:''}</span>`).join('');
+['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((d,di)=>{w+=`<span>${d}</span>`;for(let h=0;h<24;h++){const a=h>=23||h<7;const r=a&&di<5&&(h===23||h<(di%2?5:6));w+=`<span class="c${r?' r':a?' a':''}"></span>`}});
+week.innerHTML=w;
+
+// data
+let train=[],evl=[];
+for(let i=0;i<=124;i++){const x=i/124;train.push(1.35*Math.exp(-3.2*x)+.36+Math.sin(i*1.7)*.018+(Math.random()-.5)*.02);if(i%8===0)evl.push([i,1.38*Math.exp(-2.9*x)+.42])}
+const spark={gpu:Array.from({length:60},()=>80+Math.random()*12),vram:Array.from({length:60},()=>78+Math.random()*3),temp:Array.from({length:60},(_,i)=>66+i*.08+Math.random()*2)};
+
+function setup(c){const r=c.getBoundingClientRect();if(!r.width)return null;const d=devicePixelRatio||1;const h=+c.getAttribute('height');c.style.height=h+'px';c.width=r.width*d;c.height=h*d;const x=c.getContext('2d');x.setTransform(d,0,0,d,0,0);return [x,r.width,h]}
+function line(x,pts,col,w,dash){x.beginPath();x.setLineDash(dash||[]);pts.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));x.strokeStyle=col;x.lineWidth=w;x.stroke();x.setLineDash([])}
+function lossChart(id,total){const c=document.getElementById(id);const s=c&&setup(c);if(!s)return;const [x,W,H]=s;const L=34,B=18,T=6,R=6;const ymin=.3,ymax=1.8;const sx=i=>L+(W-L-R)*i/total,sy=v=>T+(H-T-B)*(1-(v-ymin)/(ymax-ymin));
+ x.font='10px '+cv('--mono');x.fillStyle=cv('--ink-tertiary');x.strokeStyle=cv('--line');x.lineWidth=1;
+ [.4,.8,1.2,1.6].forEach(v=>{x.beginPath();x.moveTo(L,sy(v));x.lineTo(W-R,sy(v));x.stroke();x.fillText(v.toFixed(1),4,sy(v)+3)});
+ [0,.25,.5,.75,1].forEach(f=>{{const t=Math.round(f*2000)+'';x.fillText(t,sx(f*total)-(f===1?x.measureText(t).width:f?8:0),H-4)}});
+ const tp=train.map((v,i)=>[sx(i),sy(v)]);
+ const g=x.createLinearGradient(0,T,0,H-B);g.addColorStop(0,'rgba(94,106,210,.2)');g.addColorStop(1,'rgba(94,106,210,0)');x.beginPath();tp.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));x.lineTo(tp[tp.length-1][0],H-B);x.lineTo(tp[0][0],H-B);x.fillStyle=g;x.fill();
+ line(x,tp,cv('--primary'),1.5);line(x,evl.map(e=>[sx(e[0]),sy(e[1])]),cv('--ink-subtle'),1.2,[3,3]);
+ const lp=tp[tp.length-1];x.beginPath();x.arc(lp[0],lp[1],3,0,7);x.fillStyle=cv('--primary-hover');x.fill()}
+function sparkC(id,d,lo,hi){const c=document.getElementById(id);const s=c&&setup(c);if(!s)return;const [x,W,H]=s;const p=d.map((v,i)=>[W*i/(d.length-1),2+(H-4)*(1-(v-lo)/(hi-lo))]);line(x,p,cv('--primary'),1.3)}
+function evalChart(){const c=document.getElementById('evalc');const s=c&&setup(c);if(!s)return;const [x,W,H]=s;const L=34,B=18,T=6,R=10;const vs=[25.1,27.0,29.4,29.9,31.8,33.0,34.2,35.0,35.8,36.0,36.8,36.8,37.7,39.0];const bs=[29,29.6,30.1,30.4,31,31.6,32.2,32.6,33.1,33.4,33.9,34.2,34.6,34.9];const lo=20,hi=45;const sx=i=>L+(W-L-R)*i/(vs.length-1),sy=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+ x.font='10px '+cv('--mono');x.fillStyle=cv('--ink-tertiary');x.strokeStyle=cv('--line');
+ [25,30,35,40].forEach(v=>{x.beginPath();x.moveTo(L,sy(v));x.lineTo(W-R,sy(v));x.stroke();x.fillText(v+'%',2,sy(v)+3)});
+ vs.forEach((_,i)=>{if(i%2===1||i===vs.length-1)x.fillText('v'+(i+1),sx(i)-7,H-4)});
+ line(x,bs.map((v,i)=>[sx(i),sy(v)]),cv('--ink-subtle'),1.2,[3,3]);line(x,vs.map((v,i)=>[sx(i),sy(v)]),cv('--primary'),1.6);
+ vs.forEach((v,i)=>{x.beginPath();x.arc(sx(i),sy(v),2.4,0,7);x.fillStyle=i===vs.length-1?cv('--primary-hover'):cv('--primary');x.fill()})}
+function drawAll(){lossChart('lossMini',200);lossChart('loss',200);sparkC('gpu',spark.gpu,50,100);sparkC('vram',spark.vram,50,100);sparkC('temp',spark.temp,40,90);evalChart()}
+setTheme(theme);drawAll();addEventListener('resize',drawAll);
+themeBtn.onclick=()=>{const dark=cv('--canvas')==='#010102';setTheme(dark?'light':'dark')};
+matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(theme==='system')drawAll()});
+
+// live tick
+let step=1240;
+setInterval(()=>{if(train.length>=200)return;step+=10;const i=train.length,xx=i/124;train.push(1.35*Math.exp(-3.2*xx)+.36+Math.sin(i*1.7)*.018+(Math.random()-.5)*.02);if(i%8===0)evl.push([i,1.38*Math.exp(-2.9*xx)+.42]);
+ for(const k in spark){spark[k].shift()}spark.gpu.push(80+Math.random()*12);spark.vram.push(78+Math.random()*3);spark.temp.push(Math.min(76,spark.temp[spark.temp.length-1]+(Math.random()-.45)));
+ const l=train[train.length-1].toFixed(3),g=Math.round(spark.gpu[59])+'%',t=Math.round(spark.temp[59])+'°C',sf=step.toLocaleString();
+ tbStep.textContent=sbStep.textContent=sf;kvStep.textContent=sf+' / 2,000';sbLoss.textContent=l;lossNow.textContent=`train ${l} · eval ${evl[evl.length-1][1].toFixed(3)}`;
+ sbGpu.textContent=gpuV.textContent=ftGpu.textContent=g;ftGpuB.style.width=g;sbTemp.textContent=tempV.textContent=t;drawAll()},1500);
+</script>
+</body>
+</html>

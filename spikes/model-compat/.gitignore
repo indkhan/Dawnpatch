@@ -1,0 +1,7 @@
+.venv/
+outputs/
+__pycache__/
+outputs_log.txt
+.venv-unsloth/
+unsloth_log.txt
+unsloth_compiled_cache/
